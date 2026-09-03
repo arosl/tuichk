@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -240,6 +241,54 @@ func TestColonCommands(t *testing.T) {
 	if !m.loading || !m.allLoading || cmd == nil {
 		t.Error(":r! should start both the cheap and the full refresh")
 	}
+}
+
+func TestScrollChordsAndCursorVisibility(t *testing.T) {
+	m := New(nil, "mysite", 0)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	svcs := make([]checkmk.Service, 100)
+	for i := range svcs {
+		svcs[i] = checkmk.Service{HostName: fmt.Sprintf("h%02d", i),
+			Description: "svc", State: checkmk.SvcOK, LastStateChange: time.Now()}
+	}
+	upd, _ = upd.Update(allSvcsMsg{at: time.Now(), services: svcs})
+	m = key(upd.(Model), "3") // services view, 100 rows
+	vis := m.tableHeight()
+
+	visible := func(ctx string) {
+		t.Helper()
+		if m.cursor < m.scroll || m.cursor >= m.scroll+vis {
+			t.Errorf("%s: cursor %d outside visible window [%d,%d)", ctx, m.cursor, m.scroll, m.scroll+vis)
+		}
+	}
+
+	m = key(m, "G") // bottom: the selected row must actually be drawn
+	if m.cursor != 99 {
+		t.Fatalf("G should select last row, cursor=%d", m.cursor)
+	}
+	visible("after G")
+	if !strings.Contains(m.View(), "h99") {
+		t.Error("after G the selected row h99 must be rendered on screen")
+	}
+
+	m = colon(t, m, "50") // row 50 → cursor 49, mid-list, far from both ends
+	if m.cursor != 49 {
+		t.Fatalf(":50 should select row index 49, cursor=%d", m.cursor)
+	}
+	m = key(m, "z", "t")
+	if m.scroll != m.cursor {
+		t.Errorf("zt should scroll cursor line to top, scroll=%d cursor=%d", m.scroll, m.cursor)
+	}
+	m = key(m, "z", "b")
+	if want := m.cursor - vis + 1; m.scroll != want {
+		t.Errorf("zb should scroll cursor line to bottom, scroll=%d want %d", m.scroll, want)
+	}
+	visible("after zb")
+	m = key(m, "z", "z")
+	if want := m.cursor - vis/2; m.scroll != want {
+		t.Errorf("zz should center cursor line, scroll=%d want %d", m.scroll, want)
+	}
+	visible("after zz")
 }
 
 func TestDownViewShowsHandledHosts(t *testing.T) {

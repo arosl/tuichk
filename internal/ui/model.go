@@ -281,9 +281,11 @@ func (m *Model) clampCursor(n int) {
 	}
 }
 
-// tableHeight is the number of rows that fit between header and footer.
+// tableHeight is the number of data rows drawn on screen: everything
+// minus the five chrome lines (title, summary, tabs, column header,
+// footer). Every scroll/clamp computation must use this same number —
+// viewTable must not consume additional lines out of it.
 func (m Model) tableHeight() int {
-	// title + summary + tabs + column header + footer = 5 lines
 	return m.height - 5
 }
 
@@ -909,7 +911,6 @@ func (m Model) viewTable() string {
 	}
 	header += pad("AGE", ageW+1) + "OUTPUT"
 	b.WriteString(styleHeaderRow.Render(truncate.String(header, uint(m.width))) + "\n")
-	height-- // column header consumed one line
 
 	if len(rows) == 0 {
 		msg := "no results"
