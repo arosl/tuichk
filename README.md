@@ -130,3 +130,7 @@ full service list except when asked:
 
 - Works against CheckMK 2.x (REST API 1.0), all editions.
 - Read-only: tuichk only issues GET requests.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
