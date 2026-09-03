@@ -462,6 +462,38 @@ func TestDetailFetchesMissingOutput(t *testing.T) {
 	}
 }
 
+func TestTabJumpsServiceToHostAndBack(t *testing.T) {
+	// open the CRIT service detail (problems row 1 after the DOWN host)
+	m := key(testModel(t), "j", "enter")
+	if m.detail == nil || m.detail.kind != rowService || m.detail.desc != "HTTPS certificate" {
+		t.Fatalf("expected service detail, got %+v", m.detail)
+	}
+	m = key(m, "tab")
+	if m.detail == nil || m.detail.kind != rowHost || m.detail.host != "web01" {
+		t.Fatalf("tab should open the service's host detail, got %+v", m.detail)
+	}
+	if !m.detailHostSvcsLoading {
+		t.Error("host detail should fetch the host's services")
+	}
+	upd, _ := m.Update(hostSvcsMsg{host: "web01", services: []checkmk.Service{
+		{HostName: "web01", Description: "HTTPS certificate", State: checkmk.SvcCrit, PluginOutput: "cert expires"},
+		{HostName: "web01", Description: "CPU load", State: checkmk.SvcOK, PluginOutput: "load 0.4"},
+	}})
+	m = upd.(Model)
+	v := m.View()
+	if !strings.Contains(v, "CPU load") || !strings.Contains(v, "tab back") {
+		t.Error("host detail should list its services and offer tab back")
+	}
+	m = key(m, "tab") // back to the service
+	if m.detail == nil || m.detail.desc != "HTTPS certificate" {
+		t.Fatalf("tab should return to the originating service, got %+v", m.detail)
+	}
+	m = key(m, "esc")
+	if m.detail != nil || m.detailPrev != nil {
+		t.Error("esc should close and clear the return slot")
+	}
+}
+
 func TestViewSwitchAndSummary(t *testing.T) {
 	m := key(testModel(t), "4")
 	if got := len(m.rows()); got != 2 {

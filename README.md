@@ -52,6 +52,7 @@ is recommended.
 | `1` `2` `3` `4` / `tab` | Switch view: Problems · Down · Services · Hosts |
 | `/` | Fuzzy search (matches state, host, service and plugin output — e.g. `crit nfs`) |
 | `enter` | Detail view of selected host/service |
+| `tab` (in detail) | Jump from a service to its host and back; a host's detail lists all its services |
 | `esc` | Clear search / close detail |
 | `j`/`k` / arrows | Move one row |
 | `d`/`u` (or `ctrl+d`/`ctrl+u`) | Half page down / up |

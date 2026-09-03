@@ -267,6 +267,19 @@ func (c *Client) AllServices(ctx context.Context) ([]Service, error) {
 	return c.services(ctx, serviceBaseColumns, "")
 }
 
+// HostServices returns all services of one host, with output — a small
+// server-side-filtered query, cheap even on large sites.
+func (c *Client) HostServices(ctx context.Context, host string) ([]Service, error) {
+	filter, err := json.Marshal(map[string]string{
+		"op": "=", "left": "host_name", "right": host,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return c.services(ctx,
+		append([]string{"plugin_output"}, serviceBaseColumns...), string(filter))
+}
+
 // ServiceDetail fetches one service's live status including full output.
 func (c *Client) ServiceDetail(ctx context.Context, host, description string) (*Service, error) {
 	filter, err := json.Marshal(map[string]any{

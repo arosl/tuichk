@@ -61,6 +61,13 @@ type graphsMsg struct {
 	host, desc string // desc as requested (may be checkmk.HostGraphService)
 }
 
+// hostSvcsMsg carries one host's service list for its detail view.
+type hostSvcsMsg struct {
+	services []checkmk.Service
+	err      error
+	host     string
+}
+
 type refreshTickMsg struct{}
 
 // Model is the bubbletea model for the whole application.
@@ -99,6 +106,10 @@ type Model struct {
 	detailGraphs        []checkmk.Graph
 	detailGraphsLoading bool
 	detailGraphsErr     error
+
+	detailHostSvcs        []checkmk.Service // host detail: its services
+	detailHostSvcsLoading bool
+	detailPrev            *row // service to return to after tab-to-host
 
 	spin        spinner.Model
 	loading     bool
@@ -198,6 +209,16 @@ func (m Model) fetchGraphs(host, desc string) tea.Cmd {
 		defer cancel()
 		graphs, err := client.ServiceGraphs(ctx, host, desc)
 		return graphsMsg{graphs: graphs, err: err, host: host, desc: desc}
+	}
+}
+
+func (m Model) fetchHostServices(host string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		svcs, err := client.HostServices(ctx, host)
+		return hostSvcsMsg{services: svcs, err: err, host: host}
 	}
 }
 
@@ -372,6 +393,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailVP.SetContent(m.detailContent(m.detailVP.Width))
 		return m, nil
 
+	case hostSvcsMsg:
+		if m.detail == nil || m.detail.kind != rowHost || m.detail.host != msg.host {
+			return m, nil
+		}
+		m.detailHostSvcsLoading = false
+		if msg.err == nil {
+			m.detailHostSvcs = msg.services
+		}
+		m.detailVP.SetContent(m.detailContent(m.detailVP.Width))
+		return m, nil
+
 	case refreshTickMsg:
 		if m.loading {
 			return m, m.scheduleRefresh()
@@ -380,7 +412,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.fetchProblems(), m.spin.Tick)
 
 	case spinner.TickMsg:
-		if !m.loading && !m.allLoading && !m.detailLoading && !m.detailGraphsLoading {
+		if !m.loading && !m.allLoading && !m.detailLoading && !m.detailGraphsLoading && !m.detailHostSvcsLoading {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -441,6 +473,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detail = nil
 			m.detailLoading = false
 			m.detailGraphsLoading = false
+			m.detailHostSvcsLoading = false
+			m.detailPrev = nil
+		case "tab":
+			// service → its host; host → back to the service it came from
+			if m.detail.kind == rowService {
+				prev := *m.detail
+				mm, cmd := m.openHostOf(m.detail.host)
+				mm.detailPrev = &prev
+				return mm, cmd
+			}
+			if m.detailPrev != nil {
+				prev := *m.detailPrev
+				mm, cmd := m.openDetail(prev)
+				mm.detailPrev = nil
+				return mm, cmd
+			}
 		case "g":
 			m.detailVP.GotoTop()
 		case "G":
@@ -702,14 +750,33 @@ func (m Model) openDetail(r row) (Model, tea.Cmd) {
 	m.detailGraphs = nil
 	m.detailGraphsErr = nil
 	m.detailGraphsLoading = true
+	m.detailHostSvcs = nil
 	cmds := []tea.Cmd{m.fetchGraphs(r.host, r.graphService()), m.spin.Tick}
 	// Services from the cached full list carry no output; fetch it live.
 	if r.kind == rowService && r.output == "" {
 		m.detailLoading = true
 		cmds = append(cmds, m.fetchDetail(r.host, r.desc))
 	}
+	// A host detail also lists the host's services (one filtered query).
+	if r.kind == rowHost {
+		m.detailHostSvcsLoading = true
+		cmds = append(cmds, m.fetchHostServices(r.host))
+	}
 	m.resizeDetail()
 	return m, tea.Batch(cmds...)
+}
+
+// openHostOf jumps from a service detail to its host's detail — no
+// trip through the Hosts view needed.
+func (m Model) openHostOf(host string) (Model, tea.Cmd) {
+	for _, h := range m.hosts {
+		if h.Name == host {
+			return m.openDetail(hostRow(h))
+		}
+	}
+	// Host list not loaded (yet); synthesize a bare row so graphs and
+	// services still work.
+	return m.openDetail(row{kind: rowHost, host: host})
 }
 
 func (m *Model) resizeDetail() {
@@ -766,6 +833,7 @@ func helpContent() string {
 
 	b.WriteString("\n" + sec("Detail") + "\n")
 	line("enter", "open details: live output + the GUI's graphs")
+	line("tab", "service ⇄ its host (host detail lists all its services)")
 	line("j/k d/u f/b g/G", "scroll · esc or q closes")
 
 	b.WriteString("\n" + sec("Data") + "\n")
@@ -819,6 +887,30 @@ func (m Model) detailContent(width int) string {
 		b.WriteString(lipgloss.NewStyle().Width(width).Render(r.output))
 	}
 
+	// Host details list the host's services, problems first.
+	if r.kind == rowHost {
+		b.WriteString("\n\n" + styleDim.Render("Services") + "\n")
+		switch {
+		case m.detailHostSvcsLoading:
+			b.WriteString(styleDim.Render("fetching services…"))
+		case len(m.detailHostSvcs) == 0:
+			b.WriteString(styleDim.Render("none"))
+		default:
+			rows := make([]row, 0, len(m.detailHostSvcs))
+			for _, s := range m.detailHostSvcs {
+				rows = append(rows, serviceRow(s))
+			}
+			sortProblems(rows)
+			for _, sr := range rows {
+				line := sr.stateStyled() + " " + sr.desc
+				if sr.output != "" {
+					line += styleDim.Render("  " + strings.ReplaceAll(sr.output, "\n", " "))
+				}
+				b.WriteString(truncate.StringWithTail(line, uint(width), "…") + "\n")
+			}
+		}
+	}
+
 	// Graphs — the same ones the web GUI shows, drawn in braille.
 	b.WriteString("\n\n")
 	switch {
@@ -855,8 +947,13 @@ func (m Model) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	if m.detail != nil {
-		box := styleDetailBox.Render(m.detailVP.View() + "\n" +
-			styleDim.Render("esc close · j/k scroll"))
+		hint := "esc close · j/k scroll"
+		if m.detail.kind == rowService {
+			hint += " · tab host"
+		} else if m.detailPrev != nil {
+			hint += " · tab back"
+		}
+		box := styleDetailBox.Render(m.detailVP.View() + "\n" + styleDim.Render(hint))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	return b.String()
