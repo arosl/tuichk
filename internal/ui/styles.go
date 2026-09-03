@@ -19,8 +19,10 @@ var (
 			Background(colAccent).Padding(0, 1)
 	styleTabInactive = lipgloss.NewStyle().Foreground(colDim).Padding(0, 1)
 
+	// The current row: a distinctly blue-tinted band (tied to the accent
+	// bar in front of it) so it lifts clearly off the plain rows.
 	styleSelected = lipgloss.NewStyle().
-			Background(lipgloss.AdaptiveColor{Light: "252", Dark: "236"}).Bold(true)
+			Background(lipgloss.AdaptiveColor{Light: "153", Dark: "24"}).Bold(true)
 
 	// A bright accent bar drawn in the first column of the current row.
 	styleCursorBar = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
