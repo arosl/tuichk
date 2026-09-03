@@ -18,9 +18,10 @@ any user that can see the web interface can use it.
 ## Install
 
 ```sh
+make install          # stripped binary into ~/.local/bin
+make install PREFIX=/usr/local
+# or plain go:
 go build -o tuicheck .
-# or
-go install tuicheck
 ```
 
 ## Configure
