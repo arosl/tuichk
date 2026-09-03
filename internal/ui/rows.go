@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 
 	"tuicheck/internal/checkmk"
@@ -98,14 +99,24 @@ func (r row) stateName() string {
 	return svcStateNames[r.state]
 }
 
-func (r row) stateStyled() string {
+func (r row) stateStyled() string { return r.stateStyledBG(nil) }
+
+// stateStyledBG renders the state cell, optionally over a background
+// (for a selected row). The hot badge keeps its own red background so it
+// still stands out even when the row is highlighted.
+func (r row) stateStyledBG(bg lipgloss.TerminalColor) string {
+	label := fmt.Sprintf("%-5s", r.stateName())
 	if r.hot() {
-		return styleHotBadge.Render(fmt.Sprintf("%-5s", r.stateName()))
+		return styleHotBadge.Render(label)
 	}
+	st := stateStyles[r.state]
 	if r.kind == rowHost {
-		return hostStateStyle(r.state).Render(fmt.Sprintf("%-5s", r.stateName()))
+		st = hostStateStyle(r.state)
 	}
-	return stateStyles[r.state].Render(fmt.Sprintf("%-5s", r.stateName()))
+	if bg != nil {
+		st = st.Background(bg)
+	}
+	return st.Render(label)
 }
 
 // The state name leads the search target so queries like "crit nfs" or

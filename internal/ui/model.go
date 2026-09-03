@@ -1098,30 +1098,51 @@ func (m Model) viewTable() string {
 	}
 	for i := m.scroll; i < end; i++ {
 		r := rows[i]
+		sel := i == m.cursor
+
+		// On the selected row every cell carries the background, so the
+		// highlight fills the whole line instead of breaking at each
+		// cell's own reset code. Plain cells go through base; styled
+		// cells get the background added.
+		base := lipgloss.NewStyle()
+		var bg lipgloss.TerminalColor
+		if sel {
+			bg = selBg
+			base = base.Background(selBg).Bold(true)
+		}
+		paint := func(s lipgloss.Style) lipgloss.Style {
+			if sel {
+				return s.Background(selBg)
+			}
+			return s
+		}
+
 		flags := " "
 		if r.acked {
 			flags = "A"
 		} else if r.downtime {
 			flags = "D"
 		}
-		body := r.stateStyled() + " " + styleDim.Render(pad(flags, 2)) + pad(r.host, hostW) + " "
+		body := r.stateStyledBG(bg) + base.Render(" ") +
+			paint(styleDim).Render(pad(flags, 2)) + base.Render(pad(r.host, hostW)+" ")
 		if svcCol {
-			body += pad(r.desc, descW) + " "
+			body += base.Render(pad(r.desc, descW) + " ")
 		}
-		ageCell := styleDim.Render(pad(age(r.since), ageW))
+		ageStyle := styleDim
 		if r.hot() {
-			ageCell = stateStyles[2].Render(pad(age(r.since), ageW))
+			ageStyle = stateStyles[2]
 		}
-		body += ageCell + " "
+		body += paint(ageStyle).Render(pad(age(r.since), ageW)) + base.Render(" ")
 		outW := m.width - lipgloss.Width(body) - 2
 		if outW > 0 {
-			body += truncate.StringWithTail(strings.ReplaceAll(r.output, "\n", " "), uint(outW), "…")
+			body += base.Render(truncate.StringWithTail(strings.ReplaceAll(r.output, "\n", " "), uint(outW), "…"))
 		}
-		if i == m.cursor {
-			// A bright left bar plus a filled background makes the
-			// current line unmistakable at a glance.
-			b.WriteString(styleCursorBar.Render("▌") +
-				styleSelected.Width(m.width-1).Render(body) + "\n")
+		if sel {
+			// fill the rest of the line so the band spans full width
+			if padN := m.width - 1 - lipgloss.Width(body); padN > 0 {
+				body += base.Render(strings.Repeat(" ", padN))
+			}
+			b.WriteString(styleCursorBar.Render("▌") + body + "\n")
 		} else {
 			b.WriteString(" " + body + "\n")
 		}
