@@ -98,6 +98,18 @@ so `/nfs` under `:crit` can never surface a WARN row, which a fuzzy query like
 `crit nfs` alone can't guarantee. DOWN hosts count as crit-class, UNREACHABLE
 as unknown-class. The active filter is shown next to the tabs.
 
+## Graphs in the terminal
+
+Opening a service's detail (`enter`) also fetches **the same graphs the web
+GUI shows** and draws them as colored braille charts — pure text, so they
+work in any terminal, inside tmux/zellij, and over SSH. No image protocols,
+no extra tools, still one static binary.
+
+Graph data comes from the GUI's own popup endpoint, authenticated by a
+browser-style session login with the configured user — no automation user
+or separate credentials needed. Works with CheckMK 2.0+, including
+distributed (multi-site) setups.
+
 ## Gentle on the server, snappy in the terminal
 
 tuicheck is built for large, slow sites:

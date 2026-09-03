@@ -54,6 +54,13 @@ type detailMsg struct {
 	host, desc string
 }
 
+// graphsMsg carries the GUI graphs for the open detail view.
+type graphsMsg struct {
+	graphs     []checkmk.Graph
+	err        error
+	host, desc string // desc as requested (may be checkmk.HostGraphService)
+}
+
 type refreshTickMsg struct{}
 
 // Model is the bubbletea model for the whole application.
@@ -88,6 +95,10 @@ type Model struct {
 	detail        *row
 	detailVP      viewport.Model
 	detailLoading bool
+
+	detailGraphs        []checkmk.Graph
+	detailGraphsLoading bool
+	detailGraphsErr     error
 
 	spin        spinner.Model
 	loading     bool
@@ -177,6 +188,16 @@ func (m Model) fetchDetail(host, desc string) tea.Cmd {
 		defer cancel()
 		svc, err := client.ServiceDetail(ctx, host, desc)
 		return detailMsg{svc: svc, err: err, host: host, desc: desc}
+	}
+}
+
+func (m Model) fetchGraphs(host, desc string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		graphs, err := client.ServiceGraphs(ctx, host, desc)
+		return graphsMsg{graphs: graphs, err: err, host: host, desc: desc}
 	}
 }
 
@@ -338,7 +359,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.acked = msg.svc.Acknowledged
 			m.detail.downtime = msg.svc.InDowntime
 		}
-		m.detailVP.SetContent(detailContent(*m.detail, m.detailVP.Width))
+		m.detailVP.SetContent(m.detailContent(m.detailVP.Width))
+		return m, nil
+
+	case graphsMsg:
+		if m.detail == nil || m.detail.host != msg.host || m.detail.graphService() != msg.desc {
+			return m, nil // detail closed or changed meanwhile
+		}
+		m.detailGraphsLoading = false
+		m.detailGraphs = msg.graphs
+		m.detailGraphsErr = msg.err
+		m.detailVP.SetContent(m.detailContent(m.detailVP.Width))
 		return m, nil
 
 	case refreshTickMsg:
@@ -349,7 +380,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.fetchProblems(), m.spin.Tick)
 
 	case spinner.TickMsg:
-		if !m.loading && !m.allLoading && !m.detailLoading {
+		if !m.loading && !m.allLoading && !m.detailLoading && !m.detailGraphsLoading {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -409,6 +440,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "enter", "q":
 			m.detail = nil
 			m.detailLoading = false
+			m.detailGraphsLoading = false
 		case "g":
 			m.detailVP.GotoTop()
 		case "G":
@@ -657,17 +689,27 @@ func (m Model) switchView(v view) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// graphService is the popup-endpoint service name for this row.
+func (r row) graphService() string {
+	if r.kind == rowHost {
+		return checkmk.HostGraphService
+	}
+	return r.desc
+}
+
 func (m Model) openDetail(r row) (Model, tea.Cmd) {
 	m.detail = &r
-	m.resizeDetail()
+	m.detailGraphs = nil
+	m.detailGraphsErr = nil
+	m.detailGraphsLoading = true
+	cmds := []tea.Cmd{m.fetchGraphs(r.host, r.graphService()), m.spin.Tick}
 	// Services from the cached full list carry no output; fetch it live.
 	if r.kind == rowService && r.output == "" {
 		m.detailLoading = true
-		m.detail.output = "" // filled by detailMsg
-		m.detailVP.SetContent(detailContent(r, m.detailVP.Width))
-		return m, tea.Batch(m.fetchDetail(r.host, r.desc), m.spin.Tick)
+		cmds = append(cmds, m.fetchDetail(r.host, r.desc))
 	}
-	return m, nil
+	m.resizeDetail()
+	return m, tea.Batch(cmds...)
 }
 
 func (m *Model) resizeDetail() {
@@ -684,7 +726,7 @@ func (m *Model) resizeDetail() {
 	}
 	m.detailVP = viewport.New(w, h)
 	if m.detail != nil {
-		m.detailVP.SetContent(detailContent(*m.detail, w))
+		m.detailVP.SetContent(m.detailContent(w))
 	}
 }
 
@@ -723,7 +765,7 @@ func helpContent() string {
 	line(":all (:ok)", "clear the state filter (DOWN=crit, UNREACH=unknown)")
 
 	b.WriteString("\n" + sec("Detail") + "\n")
-	line("enter", "open details (fetches live output)")
+	line("enter", "open details: live output + the GUI's graphs")
 	line("j/k d/u f/b g/G", "scroll · esc or q closes")
 
 	b.WriteString("\n" + sec("Data") + "\n")
@@ -741,7 +783,8 @@ func helpContent() string {
 	return b.String()
 }
 
-func detailContent(r row, width int) string {
+func (m Model) detailContent(width int) string {
+	r := *m.detail
 	var b strings.Builder
 	label := lipgloss.NewStyle().Foreground(colDim).Width(10).Render
 	write := func(k, v string) {
@@ -774,6 +817,24 @@ func detailContent(r row, width int) string {
 		b.WriteString(styleDim.Render("fetching live output…"))
 	} else {
 		b.WriteString(lipgloss.NewStyle().Width(width).Render(r.output))
+	}
+
+	// Graphs — the same ones the web GUI shows, drawn in braille.
+	b.WriteString("\n\n")
+	switch {
+	case m.detailGraphsLoading:
+		b.WriteString(styleDim.Render("fetching graphs…"))
+	case m.detailGraphsErr != nil:
+		b.WriteString(styleErr.Render("graphs: " + m.detailGraphsErr.Error()))
+	case len(m.detailGraphs) == 0:
+		b.WriteString(styleDim.Render("no graphs available"))
+	default:
+		for i, g := range m.detailGraphs {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(renderGraph(g, width))
+		}
 	}
 	return b.String()
 }

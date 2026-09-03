@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"time"
 )
@@ -72,11 +73,15 @@ func New(baseURL, user, secret string, insecureTLS bool) *Client {
 	if insecureTLS {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
+	// The jar holds the GUI session cookie for graph fetches; REST
+	// calls authenticate per-request via the Bearer header.
+	jar, _ := cookiejar.New(nil)
 	return &Client{
 		baseURL: baseURL,
 		user:    user,
 		secret:  secret,
 		hc: &http.Client{
+			Jar: jar,
 			// Large sites take minutes to serialize the full service
 			// list; callers bound individual requests via context.
 			Timeout:   5 * time.Minute,
