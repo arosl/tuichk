@@ -48,7 +48,7 @@ is recommended.
 
 | Key | Action |
 |---|---|
-| `1` `2` `3` / `tab` | Switch view: Problems · Services · Hosts |
+| `1` `2` `3` `4` / `tab` | Switch view: Problems · Down · Services · Hosts |
 | `/` | Fuzzy search (matches state, host, service and plugin output — e.g. `crit nfs`) |
 | `enter` | Detail view of selected host/service |
 | `esc` | Clear search / close detail |
@@ -65,13 +65,37 @@ move the selection without leaving the input. The detail view scrolls with
 
 Plain-key paging exists because terminal multiplexers like zellij bind many
 `ctrl` combinations for themselves — no binding above needs a modifier.
+
+Quitting is deliberate so a stray keypress can't kill a session you keep
+running all day: only `:q` (and friends: `:quit`, `:q!`) or a double
+`ctrl+c` exit. A single `ctrl+c` asks for confirmation in the footer.
 | `h` | Problems view: toggle showing handled (acked / in downtime) |
 | `r` | Refresh now |
-| `q` | Quit |
+| `?` or `:help` | Full key & command reference |
+| `:q` | Quit (vim-style; `ctrl+c` twice also works) |
 
 The **Problems** view is the default: unhandled problems sorted by severity
 (host DOWN → CRIT → UNKNOWN → WARN), newest first within each severity.
 Acknowledged problems are flagged `A`, downtimes `D`.
+
+The **Down** view always lists every non-UP host — including acknowledged
+ones and those in downtime, which the Problems view hides as "handled".
+
+Crit-level problems aged **15 minutes to 4 hours** (configurable via
+`hot_min`/`hot_max`) get an inverted red badge and sort above their peers —
+old enough not to be a transient flap, young enough not to be a known stale
+issue: the truly actionable window.
+
+The `:` command line understands `:q`/`:quit`,
+`:problems`/`:down`/`:services`/`:hosts` (or `:1`–`:4`, `:p` `:d` `:s`),
+`:r`/`:refresh` (`:r!` also refetches the full service list), `:handled`,
+`:N` (jump to row N) and `:help`.
+
+**Hard state filters**: `:crit`, `:warn`, `:unknown` (and `:ok`, `:all` to
+clear) restrict the current view to one state class before fuzzy search runs —
+so `/nfs` under `:crit` can never surface a WARN row, which a fuzzy query like
+`crit nfs` alone can't guarantee. DOWN hosts count as crit-class, UNREACHABLE
+as unknown-class. The active filter is shown next to the tabs.
 
 ## Gentle on the server, snappy in the terminal
 

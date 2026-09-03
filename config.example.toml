@@ -19,3 +19,10 @@ password_cmd = "pass show checkmk/automation"
 
 # Skip TLS certificate verification (self-signed certs).
 # insecure_tls = false
+
+# The "hot window": crit-level problems (CRIT services, DOWN hosts) aged
+# between these bounds get an inverted red badge and sort above their peers —
+# old enough not to be a transient flap, young enough to still be actionable.
+# Go duration strings. Defaults:
+# hot_min = "15m"
+# hot_max = "4h"

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -30,6 +31,11 @@ type Config struct {
 	RefreshSeconds *int `toml:"refresh_seconds"`
 	// InsecureTLS skips TLS certificate verification.
 	InsecureTLS bool `toml:"insecure_tls"`
+	// HotMin/HotMax bound the "hot window": crit-level problems aged
+	// between them get extra visual weight. Go duration strings
+	// ("15m", "4h", "90m"); defaults 15m and 4h.
+	HotMin string `toml:"hot_min"`
+	HotMax string `toml:"hot_max"`
 }
 
 // DefaultPath returns the default config file location,
@@ -74,6 +80,25 @@ func (c *Config) Refresh() int {
 		return 0
 	}
 	return *c.RefreshSeconds
+}
+
+// HotWindow returns the configured hot-window bounds (defaults 15m–4h).
+func (c *Config) HotWindow() (min, max time.Duration, err error) {
+	min, max = 15*time.Minute, 4*time.Hour
+	if c.HotMin != "" {
+		if min, err = time.ParseDuration(c.HotMin); err != nil {
+			return 0, 0, fmt.Errorf("hot_min %q: %w", c.HotMin, err)
+		}
+	}
+	if c.HotMax != "" {
+		if max, err = time.ParseDuration(c.HotMax); err != nil {
+			return 0, 0, fmt.Errorf("hot_max %q: %w", c.HotMax, err)
+		}
+	}
+	if min < 0 || max <= min {
+		return 0, 0, fmt.Errorf("hot window %s–%s is not a valid range", min, max)
+	}
+	return min, max, nil
 }
 
 // ResolvePassword returns the password, running PasswordCmd if configured.

@@ -51,6 +51,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	hotMin, hotMax, err := cfg.HotWindow()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tuicheck: %v\n", err)
+		os.Exit(1)
+	}
+	ui.SetHotWindow(hotMin, hotMax)
+
 	client := checkmk.New(cfg.URL, cfg.Username, password, cfg.InsecureTLS)
 	model := ui.New(client, cfg.SiteName(), cfg.Refresh())
 

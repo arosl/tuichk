@@ -24,6 +24,11 @@ var (
 
 	styleHeaderRow = lipgloss.NewStyle().Foreground(colDim).Underline(true)
 
+	// Inverted badge for problems in the actionable "hot window".
+	styleHotBadge = lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "231", Dark: "231"}).
+			Background(colCrit)
+
 	styleDetailBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colAccent).Padding(0, 1)

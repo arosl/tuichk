@@ -4,6 +4,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,11 +22,13 @@ type view int
 
 const (
 	viewProblems view = iota
+	viewDown
 	viewServices
 	viewHosts
+	viewCount
 )
 
-var viewNames = [...]string{"Problems", "Services", "Hosts"}
+var viewNames = [...]string{"Problems", "Down", "Services", "Hosts"}
 
 // problemsMsg carries the cheap, frequently refreshed data:
 // all hosts plus only the non-OK services (filtered server-side).
@@ -70,10 +73,17 @@ type Model struct {
 	cursor      int
 	scroll      int // first visible row index
 	showHandled bool
+	stateFilter int  // -1 = all; else a checkmk.Svc* class, see matchesClass
 	pendingZ    bool // a "z" was pressed, awaiting z/t/b
+	quitArmed   bool // one quit key seen; a second confirms
 
 	searching bool
 	search    textinput.Model
+
+	cmdMode  bool // vim-style ":" command line
+	cmd      textinput.Model
+	cmdErr   string
+	helpOpen bool
 
 	detail        *row
 	detailVP      viewport.Model
@@ -94,17 +104,23 @@ func New(client *checkmk.Client, site string, refreshSeconds int) Model {
 	ti.Placeholder = "fuzzy filter…"
 	ti.CharLimit = 128
 
+	ci := textinput.New()
+	ci.Prompt = ":"
+	ci.CharLimit = 32
+
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 
 	return Model{
-		client:   client,
-		site:     site,
-		interval: time.Duration(refreshSeconds) * time.Second,
-		search:   ti,
-		spin:     sp,
-		loading:  true,
+		client:      client,
+		site:        site,
+		interval:    time.Duration(refreshSeconds) * time.Second,
+		search:      ti,
+		cmd:         ci,
+		stateFilter: -1,
+		spin:        sp,
+		loading:     true,
 	}
 }
 
@@ -204,6 +220,15 @@ func (m Model) rows() []row {
 			rows = unhandled
 		}
 		sortProblems(rows)
+	case viewDown:
+		// Every non-UP host, handled or not — downtimes and acks are
+		// visible here (flagged D/A) instead of hidden.
+		for _, h := range m.hosts {
+			if h.State != checkmk.HostUp {
+				rows = append(rows, hostRow(h))
+			}
+		}
+		sortProblems(rows)
 	case viewServices:
 		for _, s := range m.all {
 			r := serviceRow(s)
@@ -219,6 +244,17 @@ func (m Model) rows() []row {
 			rows = append(rows, hostRow(h))
 		}
 		sortByName(rows)
+	}
+	// The hard state filter runs before fuzzy search, so a query inside
+	// e.g. :crit can never surface rows of another state.
+	if m.stateFilter >= 0 {
+		kept := rows[:0]
+		for _, r := range rows {
+			if r.matchesClass(m.stateFilter) {
+				kept = append(kept, r)
+			}
+		}
+		rows = kept
 	}
 	return fuzzyFilter(rows, m.search.Value())
 }
@@ -325,8 +361,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Quitting is deliberate: ":q" like vim, or ctrl+c pressed twice.
+	// A stray key can't kill a long-running session.
+	wasArmed := m.quitArmed
+	m.quitArmed = false
+	m.cmdErr = ""
 	if msg.Type == tea.KeyCtrlC {
-		return m, tea.Quit
+		if wasArmed {
+			return m, tea.Quit
+		}
+		m.quitArmed = true
+		return m, nil
+	}
+
+	// Help overlay: any key dismisses it.
+	if m.helpOpen {
+		m.helpOpen = false
+		return m, nil
+	}
+
+	if m.cmdMode {
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.cmdMode = false
+			m.cmd.Blur()
+			m.cmd.SetValue("")
+		case tea.KeyEnter:
+			line := strings.TrimSpace(m.cmd.Value())
+			m.cmdMode = false
+			m.cmd.Blur()
+			m.cmd.SetValue("")
+			return m.runCommand(line)
+		default:
+			var cmd tea.Cmd
+			m.cmd, cmd = m.cmd.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	}
 
 	// Detail overlay has its own small keymap; the viewport already
@@ -409,8 +480,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "q":
-		return m, tea.Quit
+	case ":":
+		m.cmdMode = true
+		m.cmdErr = ""
+		m.cmd.Focus()
+		return m, textinput.Blink
 	case "z":
 		m.pendingZ = true
 	case "H": // top of screen
@@ -442,31 +516,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "1":
 		return m.switchView(viewProblems)
 	case "2":
-		return m.switchView(viewServices)
+		return m.switchView(viewDown)
 	case "3":
+		return m.switchView(viewServices)
+	case "4":
 		return m.switchView(viewHosts)
 	case "tab":
-		return m.switchView((m.view + 1) % 3)
+		return m.switchView((m.view + 1) % viewCount)
 	case "shift+tab":
-		return m.switchView((m.view + 2) % 3)
+		return m.switchView((m.view + viewCount - 1) % viewCount)
 	case "h":
 		if m.view == viewProblems {
 			m.showHandled = !m.showHandled
 			m.clampCursor(len(m.rows()))
 		}
 	case "r":
-		var cmds []tea.Cmd
-		if !m.loading {
-			m.loading = true
-			cmds = append(cmds, m.fetchProblems(), m.spin.Tick)
-		}
-		// Refreshing the heavy full list is deliberate: only from the
-		// Services view, and never while a fetch is already running.
-		if m.view == viewServices && !m.allLoading {
-			m.allLoading = true
-			cmds = append(cmds, m.fetchAllServices(), m.spin.Tick)
-		}
-		return m, tea.Batch(cmds...)
+		// Refreshing the heavy full list stays deliberate: only from
+		// the Services view (or :r! from anywhere).
+		return m.refresh(m.view == viewServices)
+	case "?":
+		m.helpOpen = true
 	case "j", "down":
 		m.cursor++
 		m.clampCursor(len(rows))
@@ -498,6 +567,75 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openDetail(rows[m.cursor])
 		}
 	}
+	return m, nil
+}
+
+// refresh triggers the cheap problems fetch; full additionally refetches
+// the heavy complete service list.
+func (m Model) refresh(full bool) (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	if !m.loading {
+		m.loading = true
+		cmds = append(cmds, m.fetchProblems(), m.spin.Tick)
+	}
+	if full && !m.allLoading {
+		m.allLoading = true
+		cmds = append(cmds, m.fetchAllServices(), m.spin.Tick)
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// runCommand executes a ":"-line, vim-style.
+func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
+	switch line {
+	case "":
+		return m, nil
+	case "q", "q!", "qa", "quit", "exit":
+		return m, tea.Quit
+	case "1", "p", "problems":
+		return m.switchView(viewProblems)
+	case "2", "d", "down":
+		return m.switchView(viewDown)
+	case "3", "s", "services":
+		return m.switchView(viewServices)
+	case "4", "hosts":
+		return m.switchView(viewHosts)
+	case "r", "refresh":
+		return m.refresh(false)
+	case "r!", "refresh!": // also refetch the heavy full service list
+		return m.refresh(true)
+	case "handled":
+		m.showHandled = !m.showHandled
+		m.clampCursor(len(m.rows()))
+		return m, nil
+	case "crit", "c":
+		return m.setStateFilter(checkmk.SvcCrit)
+	case "warn", "w":
+		return m.setStateFilter(checkmk.SvcWarn)
+	case "unknown", "unkn", "u":
+		return m.setStateFilter(checkmk.SvcUnknown)
+	case "ok":
+		return m.setStateFilter(checkmk.SvcOK)
+	case "all":
+		return m.setStateFilter(-1)
+	case "h", "help":
+		m.helpOpen = true
+		return m, nil
+	}
+	// :N jumps to row N, like a vim line number.
+	if n, err := strconv.Atoi(line); err == nil && n > 0 {
+		m.cursor = n - 1
+		m.clampCursor(len(m.rows()))
+		return m, nil
+	}
+	m.cmdErr = "not a command: :" + line + "  (:help lists commands)"
+	return m, nil
+}
+
+func (m Model) setStateFilter(class int) (Model, tea.Cmd) {
+	m.stateFilter = class
+	m.cursor, m.scroll = 0, 0
+	m.clampCursor(len(m.rows()))
 	return m, nil
 }
 
@@ -548,6 +686,58 @@ func (m *Model) resizeDetail() {
 	}
 }
 
+// helpContent is the full key/command reference shown by :help —
+// everything needed to drive the UI is on this one screen.
+func helpContent() string {
+	sec := lipgloss.NewStyle().Foreground(colAccent).Bold(true).Render
+	k := lipgloss.NewStyle().Foreground(colDim).Width(22).Render
+	var b strings.Builder
+	line := func(keys, what string) { b.WriteString("  " + k(keys) + what + "\n") }
+
+	b.WriteString(styleTitle.Render("tuicheck — keys & commands") + "\n\n")
+
+	b.WriteString(sec("Views") + "\n")
+	line("1 / 2 / 3 / 4", "Problems · Down · Services · Hosts")
+	line("tab / shift+tab", "next / previous view")
+	line(":problems :down …", "same, by name (:services :hosts, :p :d :s)")
+	line("", styleDim.Render("Down lists every non-UP host, incl. acked/downtime"))
+
+	b.WriteString("\n" + sec("Movement") + "\n")
+	line("j / k, ↑ / ↓", "one row down / up")
+	line("d / u  (^d / ^u)", "half page down / up")
+	line("f / b  (^f/^b, PgDn/Up)", "full page down / up")
+	line("g / G, Home / End", "first / last row")
+	line("H / M / L", "top / middle / bottom of screen")
+	line("zz / zt / zb", "scroll cursor line to center / top / bottom")
+	line(":N", "jump to row N")
+
+	b.WriteString("\n" + sec("Search") + "\n")
+	line("/", "fuzzy filter over state, host, service, output")
+	line("", styleDim.Render("e.g. \"crit nfs\", \"down web\", \"warn cert\""))
+	line("↑/↓  (^j/^k, ^n/^p)", "move selection while typing")
+	line("enter / esc", "keep filter / clear it")
+	line(":crit :warn :unknown", "hard state filter — fuzzy search stays within it")
+	line(":all (:ok)", "clear the state filter (DOWN=crit, UNREACH=unknown)")
+
+	b.WriteString("\n" + sec("Detail") + "\n")
+	line("enter", "open details (fetches live output)")
+	line("j/k d/u f/b g/G", "scroll · esc or q closes")
+
+	b.WriteString("\n" + sec("Data") + "\n")
+	line("h", "Problems view: toggle handled (A ack, D downtime)")
+	line("", styleDim.Render(fmt.Sprintf(
+		"inverted badge = crit aged %s–%s: the actionable window", fmtDur(hotMinAge), fmtDur(hotMaxAge))))
+	line("r, :r", "refresh hosts + problems")
+	line(":r!", "also refetch the full service list (heavy)")
+
+	b.WriteString("\n" + sec("Quit") + "\n")
+	line(":q", "quit (also :quit, :q!)")
+	line("ctrl+c ctrl+c", "quit (single press asks first)")
+
+	b.WriteString("\n" + styleDim.Render("  ? or :help opens this screen · any key closes"))
+	return b.String()
+}
+
 func detailContent(r row, width int) string {
 	var b strings.Builder
 	label := lipgloss.NewStyle().Foreground(colDim).Width(10).Render
@@ -596,6 +786,10 @@ func (m Model) View() string {
 	b.WriteString(m.viewTable())
 	b.WriteString(m.viewFooter())
 
+	if m.helpOpen {
+		box := styleDetailBox.Render(helpContent())
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	}
 	if m.detail != nil {
 		box := styleDetailBox.Render(m.detailVP.View() + "\n" +
 			styleDim.Render("esc close · j/k scroll"))
@@ -669,6 +863,10 @@ func (m Model) viewTabs() string {
 		}
 	}
 	line := " " + strings.Join(tabs, " ")
+	if m.stateFilter >= 0 {
+		line += "  " + stateStyles[m.stateFilter].Render(svcStateNames[m.stateFilter]+" only") +
+			styleDim.Render(" (:all clears)")
+	}
 	if m.view == viewProblems && m.showHandled {
 		line += styleDim.Render("  (incl. handled)")
 	}
@@ -704,8 +902,9 @@ func (m Model) viewTable() string {
 		return s + strings.Repeat(" ", w-lipgloss.Width(s))
 	}
 
+	svcCol := m.view == viewProblems || m.view == viewServices
 	header := " " + pad("STATE", 6) + pad("F", 2) + pad("HOST", hostW+1)
-	if m.view != viewHosts {
+	if svcCol {
 		header += pad("SERVICE", descW+1)
 	}
 	header += pad("AGE", ageW+1) + "OUTPUT"
@@ -719,6 +918,8 @@ func (m Model) viewTable() string {
 			msg = m.spin.View() + " fetching the full service list once — this can take a while on a big site…"
 		case m.view == viewProblems && m.search.Value() == "":
 			msg = "✓ no problems — everything is green"
+		case m.view == viewDown && m.search.Value() == "":
+			msg = "✓ no hosts down or unreachable"
 		}
 		b.WriteString("  " + styleDim.Render(msg) + strings.Repeat("\n", height))
 		return b.String()
@@ -737,10 +938,14 @@ func (m Model) viewTable() string {
 			flags = "D"
 		}
 		line := " " + r.stateStyled() + " " + styleDim.Render(pad(flags, 2)) + pad(r.host, hostW) + " "
-		if m.view != viewHosts {
+		if svcCol {
 			line += pad(r.desc, descW) + " "
 		}
-		line += styleDim.Render(pad(age(r.since), ageW)) + " "
+		ageCell := styleDim.Render(pad(age(r.since), ageW))
+		if r.hot() {
+			ageCell = stateStyles[2].Render(pad(age(r.since), ageW))
+		}
+		line += ageCell + " "
 		outW := m.width - lipgloss.Width(line) - 1
 		if outW > 0 {
 			line += truncate.StringWithTail(strings.ReplaceAll(r.output, "\n", " "), uint(outW), "…")
@@ -757,10 +962,19 @@ func (m Model) viewTable() string {
 }
 
 func (m Model) viewFooter() string {
+	if m.cmdMode {
+		return " " + m.cmd.View()
+	}
+	if m.quitArmed {
+		return stateStyles[1].Render(" really quit? ctrl+c again — any other key cancels (or use :q)")
+	}
+	if m.cmdErr != "" {
+		return stateStyles[1].Render(" " + m.cmdErr)
+	}
 	if m.err != nil {
 		return styleErr.Render(truncate.StringWithTail(" ✗ "+m.err.Error(), uint(m.width), "…"))
 	}
-	help := " / search · enter details · 1/2/3 views · d/u f/b page · r refresh · q quit"
+	help := " / search · enter details · 1-4 views · r refresh · :q quit · ? help"
 	if m.view == viewProblems {
 		help += " · h handled"
 	}

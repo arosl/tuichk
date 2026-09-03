@@ -80,7 +80,7 @@ func TestProblemsViewSortsAndHidesHandled(t *testing.T) {
 }
 
 func TestFuzzySearchFilters(t *testing.T) {
-	m := key(testModel(t), "2") // services view (full list already cached)
+	m := key(testModel(t), "3") // services view (full list already cached)
 	if got := len(m.rows()); got != 3 {
 		t.Fatalf("want 3 services, got %d", got)
 	}
@@ -111,7 +111,7 @@ func TestSearchMatchesStateName(t *testing.T) {
 }
 
 func TestServicesViewEnrichesOutputFromProblems(t *testing.T) {
-	m := key(testModel(t), "2")
+	m := key(testModel(t), "3")
 	for _, r := range m.rows() {
 		if r.desc == "HTTPS certificate" && !strings.Contains(r.output, "cert expires") {
 			t.Errorf("problem output not merged into cached list row: %+v", r)
@@ -134,7 +134,7 @@ func TestServicesViewLazyFetchTriggered(t *testing.T) {
 }
 
 func TestPagingKeys(t *testing.T) {
-	m := key(testModel(t), "2") // services view, 3 rows
+	m := key(testModel(t), "3") // services view, 3 rows
 	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
 	m = upd.(Model)
 	if want := len(m.rows()) - 1; m.cursor != want {
@@ -148,7 +148,7 @@ func TestPagingKeys(t *testing.T) {
 }
 
 func TestVimMotions(t *testing.T) {
-	m := key(testModel(t), "2") // services view, 3 rows
+	m := key(testModel(t), "3") // services view, 3 rows
 	m = key(m, "f")             // plain-key full page (zellij-safe)
 	if want := len(m.rows()) - 1; m.cursor != want {
 		t.Errorf("f should page down, cursor=%d want %d", m.cursor, want)
@@ -176,7 +176,7 @@ func TestVimMotions(t *testing.T) {
 }
 
 func TestSearchModeSelectionKeys(t *testing.T) {
-	m := key(testModel(t), "2", "/")
+	m := key(testModel(t), "3", "/")
 	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	m = upd.(Model)
 	if m.cursor != 1 {
@@ -189,6 +189,196 @@ func TestSearchModeSelectionKeys(t *testing.T) {
 	}
 	if !m.searching {
 		t.Error("selection keys must not leave search mode")
+	}
+}
+
+func colon(t *testing.T, m Model, cmd string) Model {
+	t.Helper()
+	m = key(m, ":")
+	for _, ch := range cmd {
+		m = key(m, string(ch))
+	}
+	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return upd.(Model)
+}
+
+func TestColonCommands(t *testing.T) {
+	m := colon(t, testModel(t), "services")
+	if m.view != viewServices {
+		t.Errorf(":services should switch view, got %v", m.view)
+	}
+	if m = colon(t, m, "2"); m.view != viewDown {
+		t.Errorf(":2 should switch to the Down view, got %v", m.view)
+	}
+	if m = colon(t, m, "3"); m.view != viewServices {
+		t.Errorf(":3 is the services alias, got %v", m.view)
+	}
+	if m = colon(t, m, "hosts"); m.view != viewHosts || len(m.rows()) != 2 {
+		t.Errorf(":hosts should switch to hosts, view=%v", m.view)
+	}
+
+	// :N jumps to a row (view aliases win for 1-4)
+	m = colon(t, m, "99")
+	if want := len(m.rows()) - 1; m.cursor != want {
+		t.Errorf(":99 should jump (clamped) to last row, cursor=%d", m.cursor)
+	}
+
+	// :help opens the reference; any key closes it
+	m = colon(t, m, "help")
+	if !m.helpOpen || !strings.Contains(m.View(), "keys & commands") {
+		t.Error(":help should open the reference overlay")
+	}
+	m = key(m, "j")
+	if m.helpOpen {
+		t.Error("any key should close help")
+	}
+
+	// :r! refetches everything
+	m = key(m, ":", "r", "!")
+	upd, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = upd.(Model)
+	if !m.loading || !m.allLoading || cmd == nil {
+		t.Error(":r! should start both the cheap and the full refresh")
+	}
+}
+
+func TestDownViewShowsHandledHosts(t *testing.T) {
+	m := New(nil, "mysite", 0)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	upd, _ = upd.Update(problemsMsg{
+		at: time.Now(),
+		hosts: []checkmk.Host{
+			{Name: "up01", State: checkmk.HostUp},
+			{Name: "down-acked", State: checkmk.HostDown, Acknowledged: true},
+			{Name: "down-fresh", State: checkmk.HostDown},
+			{Name: "unreach-dt", State: checkmk.HostUnreachable, InDowntime: true},
+		},
+	})
+	m = key(upd.(Model), "2")
+	rows := m.rows()
+	if m.view != viewDown || len(rows) != 3 {
+		t.Fatalf("Down view should list all 3 non-UP hosts incl. handled, got %d", len(rows))
+	}
+	// Problems view hides the handled ones.
+	m = key(m, "1")
+	if got := len(m.rows()); got != 1 {
+		t.Errorf("Problems view should show only the unhandled DOWN host, got %d", got)
+	}
+}
+
+func TestStateFilterIsHard(t *testing.T) {
+	m := key(testModel(t), "h") // show handled: DOWN host + CRIT + WARN(acked)
+	if got := len(m.rows()); got != 3 {
+		t.Fatalf("expected 3 problems, got %d", got)
+	}
+	m = colon(t, m, "crit")
+	rows := m.rows()
+	if len(rows) != 2 {
+		t.Fatalf(":crit should keep CRIT service + DOWN host, got %+v", rows)
+	}
+	for _, r := range rows {
+		if !r.matchesClass(checkmk.SvcCrit) {
+			t.Errorf("non-crit row leaked through :crit: %+v", r)
+		}
+	}
+	// Fuzzy search stays inside the hard filter.
+	m = key(m, "/", "w", "a", "r")
+	for _, r := range m.rows() {
+		if r.state == checkmk.SvcWarn && r.kind == rowService {
+			t.Errorf("WARN row visible under :crit filter: %+v", r)
+		}
+	}
+	m = key(m, "esc")
+	if m = colon(t, m, "warn"); len(m.rows()) != 1 {
+		t.Errorf(":warn should show only the WARN service, got %+v", m.rows())
+	}
+	if m = colon(t, m, "all"); len(m.rows()) != 3 {
+		t.Errorf(":all should clear the filter, got %d rows", len(m.rows()))
+	}
+}
+
+func TestHotWindowConfigurable(t *testing.T) {
+	t.Cleanup(func() { SetHotWindow(15*time.Minute, 4*time.Hour) })
+	r := row{kind: rowService, host: "a", desc: "x", state: checkmk.SvcCrit,
+		since: time.Now().Add(-10 * time.Minute)}
+	if r.hot() {
+		t.Error("10m CRIT is outside the default 15m–4h window")
+	}
+	SetHotWindow(5*time.Minute, 8*time.Hour)
+	if !r.hot() {
+		t.Error("10m CRIT should be hot with a 5m–8h window")
+	}
+}
+
+func TestHotWindowPops(t *testing.T) {
+	now := time.Now()
+	freshCrit := row{kind: rowService, host: "a", desc: "fresh", state: checkmk.SvcCrit, since: now.Add(-2 * time.Minute)}
+	hotCrit := row{kind: rowService, host: "b", desc: "hot", state: checkmk.SvcCrit, since: now.Add(-30 * time.Minute)}
+	staleCrit := row{kind: rowService, host: "c", desc: "stale", state: checkmk.SvcCrit, since: now.Add(-9 * time.Hour)}
+	ackedHotAge := row{kind: rowService, host: "d", desc: "acked", state: checkmk.SvcCrit, acked: true, since: now.Add(-30 * time.Minute)}
+	hotDown := row{kind: rowHost, host: "e", state: checkmk.HostDown, since: now.Add(-time.Hour)}
+	warn := row{kind: rowService, host: "f", desc: "warn", state: checkmk.SvcWarn, since: now.Add(-30 * time.Minute)}
+
+	if freshCrit.hot() || staleCrit.hot() || ackedHotAge.hot() || warn.hot() {
+		t.Error("hot window must only cover unhandled crit-level problems aged 15m–4h")
+	}
+	if !hotCrit.hot() || !hotDown.hot() {
+		t.Error("30m CRIT and 1h DOWN should be hot")
+	}
+
+	rows := []row{staleCrit, freshCrit, hotCrit}
+	sortProblems(rows)
+	if rows[0].desc != "hot" {
+		t.Errorf("hot crit should sort first within CRIT, got %q", rows[0].desc)
+	}
+}
+
+func TestQuitIsDeliberate(t *testing.T) {
+	m := testModel(t)
+	upd, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = upd.(Model)
+	if cmd != nil {
+		t.Error("plain q must not quit")
+	}
+
+	// :q quits
+	m = key(m, ":", "q")
+	upd2, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = upd2.(Model)
+	if cmd2 == nil {
+		t.Fatal(":q should quit")
+	}
+	if _, ok := cmd2().(tea.QuitMsg); !ok {
+		t.Error(":q should produce tea.Quit")
+	}
+
+	// unknown command reports instead of quitting
+	m = key(m, ":", "x")
+	upd3, cmd3 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = upd3.(Model)
+	if cmd3 != nil || m.cmdErr == "" {
+		t.Error("unknown :command should show an error, not quit")
+	}
+
+	// ctrl+c needs a second press; another key cancels
+	upd4, cmd4 := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = upd4.(Model)
+	if cmd4 != nil || !m.quitArmed {
+		t.Error("first ctrl+c should only arm the quit")
+	}
+	m = key(m, "j") // cancels
+	if m.quitArmed {
+		t.Error("any other key should cancel the pending quit")
+	}
+	upd5, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = upd5.(Model)
+	upd6, cmd6 := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_ = upd6
+	if cmd6 == nil {
+		t.Fatal("second consecutive ctrl+c should quit")
+	}
+	if _, ok := cmd6().(tea.QuitMsg); !ok {
+		t.Error("double ctrl+c should produce tea.Quit")
 	}
 }
 
@@ -207,7 +397,7 @@ func TestDetailOverlay(t *testing.T) {
 }
 
 func TestDetailFetchesMissingOutput(t *testing.T) {
-	m := key(testModel(t), "2", "/", "c", "p", "u", "enter") // CPU load: OK, no output cached
+	m := key(testModel(t), "3", "/", "c", "p", "u", "enter") // CPU load: OK, no output cached
 	m, cmd := m.openDetail(m.rows()[0])
 	if !m.detailLoading || cmd == nil {
 		t.Fatal("detail on output-less service should fetch live output")
@@ -224,7 +414,7 @@ func TestDetailFetchesMissingOutput(t *testing.T) {
 }
 
 func TestViewSwitchAndSummary(t *testing.T) {
-	m := key(testModel(t), "3")
+	m := key(testModel(t), "4")
 	if got := len(m.rows()); got != 2 {
 		t.Errorf("want 2 hosts, got %d", got)
 	}

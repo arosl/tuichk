@@ -33,6 +33,33 @@ type row struct {
 
 func (r row) handled() bool { return r.acked || r.downtime }
 
+// The "hot window": a crit-level problem aged 15min–4h (configurable)
+// is the truly actionable kind — old enough not to be a transient flap,
+// young enough not to be a known, stale issue. These get extra visual
+// weight and sort above their peers.
+var (
+	hotMinAge = 15 * time.Minute
+	hotMaxAge = 4 * time.Hour
+)
+
+// SetHotWindow overrides the hot-window bounds (from config).
+func SetHotWindow(min, max time.Duration) {
+	hotMinAge, hotMaxAge = min, max
+}
+
+func (r row) hot() bool {
+	if r.handled() {
+		return false
+	}
+	critLevel := (r.kind == rowHost && r.state == checkmk.HostDown) ||
+		(r.kind == rowService && r.state == checkmk.SvcCrit)
+	if !critLevel {
+		return false
+	}
+	a := time.Since(r.since)
+	return a >= hotMinAge && a <= hotMaxAge
+}
+
 // severity orders problems: the smaller, the more urgent.
 // Unhandled problems always outrank handled ones.
 func (r row) severity() int {
@@ -72,6 +99,9 @@ func (r row) stateName() string {
 }
 
 func (r row) stateStyled() string {
+	if r.hot() {
+		return styleHotBadge.Render(fmt.Sprintf("%-5s", r.stateName()))
+	}
 	if r.kind == rowHost {
 		return hostStateStyle(r.state).Render(fmt.Sprintf("%-5s", r.stateName()))
 	}
@@ -80,6 +110,39 @@ func (r row) stateStyled() string {
 
 // The state name leads the search target so queries like "crit nfs" or
 // "down web" can filter on state and text at once.
+// matchesClass reports whether the row belongs to the given service-state
+// class (a hard filter, unlike fuzzy search). Host states map onto the
+// classes: DOWN is crit-class, UNREACHABLE unknown-class, UP ok-class.
+func (r row) matchesClass(class int) bool {
+	if class < 0 {
+		return true
+	}
+	if r.kind == rowService {
+		return r.state == class
+	}
+	switch class {
+	case checkmk.SvcOK:
+		return r.state == checkmk.HostUp
+	case checkmk.SvcCrit:
+		return r.state == checkmk.HostDown
+	case checkmk.SvcUnknown:
+		return r.state == checkmk.HostUnreachable
+	}
+	return false
+}
+
+// fmtDur renders a duration compactly: 15m0s → 15m, 4h0m0s → 4h.
+func fmtDur(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
 func hostRow(h checkmk.Host) row {
 	return row{
 		kind:     rowHost,
@@ -107,11 +170,15 @@ func serviceRow(s checkmk.Service) row {
 	}
 }
 
-// sortProblems puts the most urgent, most recent problems first.
+// sortProblems puts the most urgent problems first: severity, then the
+// hot window (15min–4h crits), then most recent.
 func sortProblems(rows []row) {
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].severity() != rows[j].severity() {
 			return rows[i].severity() < rows[j].severity()
+		}
+		if hi, hj := rows[i].hot(), rows[j].hot(); hi != hj {
+			return hi
 		}
 		return rows[i].since.After(rows[j].since)
 	})
