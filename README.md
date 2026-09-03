@@ -60,6 +60,10 @@ is recommended.
 | `g`/`G`, Home/End | Jump to top / bottom |
 | `H`/`M`/`L` | Cursor to top / middle / bottom of screen |
 | `zz`/`zt`/`zb` | Scroll cursor line to center / top / bottom |
+| `h` | Problems view: toggle showing handled (acked / in downtime) |
+| `r` | Refresh now |
+| `?` or `:help` | Full key & command reference |
+| `:q` | Quit (vim-style; `ctrl+c` twice also works) |
 
 While typing a search, the arrow keys (or `ctrl+j`/`ctrl+k`, `ctrl+n`/`ctrl+p`)
 move the selection without leaving the input. The detail view scrolls with
@@ -71,10 +75,6 @@ Plain-key paging exists because terminal multiplexers like zellij bind many
 Quitting is deliberate so a stray keypress can't kill a session you keep
 running all day: only `:q` (and friends: `:quit`, `:q!`) or a double
 `ctrl+c` exit. A single `ctrl+c` asks for confirmation in the footer.
-| `h` | Problems view: toggle showing handled (acked / in downtime) |
-| `r` | Refresh now |
-| `?` or `:help` | Full key & command reference |
-| `:q` | Quit (vim-style; `ctrl+c` twice also works) |
 
 The Problems view is the default. Unhandled problems are sorted by severity
 (host DOWN, then CRIT, UNKNOWN, WARN), newest first within each severity.
