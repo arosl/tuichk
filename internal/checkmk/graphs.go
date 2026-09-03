@@ -120,18 +120,46 @@ func looksLoggedOut(body string) bool {
 }
 
 // popupGraph mirrors the JSON literal embedded in the popup's
-// cmk.graphs.create_graph(...) calls.
+// cmk.graphs.create_graph(...) calls. Point elements come in two shapes
+// depending on curve type — flat scalars for line curves, [base, value]
+// pairs for area/stack curves — so they are decoded per-element.
 type popupGraph struct {
 	Title  string `json:"title"`
 	Start  int64  `json:"start_time"`
 	End    int64  `json:"end_time"`
 	Step   int    `json:"step"`
 	Curves []struct {
-		Title   string           `json:"title"`
-		Color   string           `json:"color"`
-		Points  [][]*float64     `json:"points"`
-		Scalars map[string][]any `json:"scalars"`
+		Title   string            `json:"title"`
+		Color   string            `json:"color"`
+		Points  []json.RawMessage `json:"points"`
+		Scalars map[string][]any  `json:"scalars"`
 	} `json:"curves"`
+}
+
+// pointValue extracts the plotted value from one raw point, which is
+// either a bare number (line curve) or a [base, value] pair (area
+// curve). Missing data decodes to NaN.
+func pointValue(raw json.RawMessage) float64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return math.NaN()
+	}
+	if raw[0] == '[' {
+		var pair []*float64
+		if json.Unmarshal(raw, &pair) == nil {
+			if len(pair) > 1 && pair[1] != nil {
+				return *pair[1]
+			}
+			if len(pair) > 0 && pair[0] != nil {
+				return *pair[0]
+			}
+		}
+		return math.NaN()
+	}
+	var v float64
+	if json.Unmarshal(raw, &v) == nil {
+		return v
+	}
+	return math.NaN()
 }
 
 // parseGraphPopup extracts every create_graph(html, {json}, ...) call.
@@ -174,14 +202,7 @@ func (pg popupGraph) toGraph() Graph {
 		}
 		curve.Values = make([]float64, len(c.Points))
 		for i, p := range c.Points {
-			v := math.NaN()
-			// points are [base, value] pairs; the value is what to plot
-			if len(p) > 1 && p[1] != nil {
-				v = *p[1]
-			} else if len(p) > 0 && p[0] != nil {
-				v = *p[0]
-			}
-			curve.Values[i] = v
+			curve.Values[i] = pointValue(p)
 		}
 		g.Curve = append(g.Curve, curve)
 	}

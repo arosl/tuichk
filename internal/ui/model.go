@@ -887,7 +887,31 @@ func (m Model) detailContent(width int) string {
 		b.WriteString(lipgloss.NewStyle().Width(width).Render(r.output))
 	}
 
-	// Host details list the host's services, problems first.
+	// Graphs — the same ones the web GUI shows, drawn in braille.
+	// They sit right under the status so a host jump shows them up top,
+	// above the (potentially long) services list.
+	b.WriteString("\n\n" + styleDim.Render("Graphs") + "\n")
+	switch {
+	case m.detailGraphsLoading:
+		b.WriteString(styleDim.Render("fetching graphs…"))
+	case m.detailGraphsErr != nil:
+		b.WriteString(styleErr.Render("graphs: " + m.detailGraphsErr.Error()))
+	case len(m.detailGraphs) == 0:
+		if r.kind == rowHost {
+			b.WriteString(styleDim.Render("none for this host (agent-monitored hosts have graphs per service below)"))
+		} else {
+			b.WriteString(styleDim.Render("no graphs available"))
+		}
+	default:
+		for i, g := range m.detailGraphs {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(renderGraph(g, width))
+		}
+	}
+
+	// Host details also list the host's services, problems first.
 	if r.kind == rowHost {
 		b.WriteString("\n\n" + styleDim.Render("Services") + "\n")
 		switch {
@@ -908,24 +932,6 @@ func (m Model) detailContent(width int) string {
 				}
 				b.WriteString(truncate.StringWithTail(line, uint(width), "…") + "\n")
 			}
-		}
-	}
-
-	// Graphs — the same ones the web GUI shows, drawn in braille.
-	b.WriteString("\n\n")
-	switch {
-	case m.detailGraphsLoading:
-		b.WriteString(styleDim.Render("fetching graphs…"))
-	case m.detailGraphsErr != nil:
-		b.WriteString(styleErr.Render("graphs: " + m.detailGraphsErr.Error()))
-	case len(m.detailGraphs) == 0:
-		b.WriteString(styleDim.Render("no graphs available"))
-	default:
-		for i, g := range m.detailGraphs {
-			if i > 0 {
-				b.WriteString("\n")
-			}
-			b.WriteString(renderGraph(g, width))
 		}
 	}
 	return b.String()
@@ -1097,23 +1103,27 @@ func (m Model) viewTable() string {
 		} else if r.downtime {
 			flags = "D"
 		}
-		line := " " + r.stateStyled() + " " + styleDim.Render(pad(flags, 2)) + pad(r.host, hostW) + " "
+		body := r.stateStyled() + " " + styleDim.Render(pad(flags, 2)) + pad(r.host, hostW) + " "
 		if svcCol {
-			line += pad(r.desc, descW) + " "
+			body += pad(r.desc, descW) + " "
 		}
 		ageCell := styleDim.Render(pad(age(r.since), ageW))
 		if r.hot() {
 			ageCell = stateStyles[2].Render(pad(age(r.since), ageW))
 		}
-		line += ageCell + " "
-		outW := m.width - lipgloss.Width(line) - 1
+		body += ageCell + " "
+		outW := m.width - lipgloss.Width(body) - 2
 		if outW > 0 {
-			line += truncate.StringWithTail(strings.ReplaceAll(r.output, "\n", " "), uint(outW), "…")
+			body += truncate.StringWithTail(strings.ReplaceAll(r.output, "\n", " "), uint(outW), "…")
 		}
 		if i == m.cursor {
-			line = styleSelected.Width(m.width).Render(line)
+			// A bright left bar plus a filled background makes the
+			// current line unmistakable at a glance.
+			b.WriteString(styleCursorBar.Render("▌") +
+				styleSelected.Width(m.width-1).Render(body) + "\n")
+		} else {
+			b.WriteString(" " + body + "\n")
 		}
-		b.WriteString(line + "\n")
 	}
 	for i := end - m.scroll; i < height; i++ {
 		b.WriteString("\n")

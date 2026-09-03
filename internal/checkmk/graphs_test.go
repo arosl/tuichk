@@ -9,6 +9,7 @@ import (
 const samplePopup = `<script type="text/javascript">
 cmk.graphs.create_graph("<div class=\"graph\">escaped \" quote and {braces}<\/div>", {"title": "Filesystem size and used space", "width": 30, "height": 10, "start_time": 1700000000, "end_time": 1700014400, "step": 120, "curves": [{"color": "#00ffc6", "title": "Used space", "scalars": {"last": [123.0, "123 MB"], "pin": [null, "n/a"]}, "points": [[null, null], [0.0, 100.0], [0.0, 110.0], [0.0, 123.0]]}, {"color": "#1e90ff", "title": "Free space", "scalars": {"last": [7.0, "7 MB"]}, "points": [[null, 30.0], [null, 20.0], [null, 10.0], [null, 7.0]]}]}, {"foo": 1});
 cmk.graphs.create_graph("<div><\/div>", {"title": "Growth", "start_time": 1700000000, "end_time": 1700014400, "step": 120, "curves": [{"color": "#ff0000", "title": "Growth", "scalars": {}, "points": [[0.0, 1.0]]}]}, {});
+cmk.graphs.create_graph("<div><\/div>", {"title": "Response time", "start_time": 1700000000, "end_time": 1700014400, "step": 60, "curves": [{"color": "#00e060", "title": "RTA", "scalars": {"last": [0.9, "0.9 ms"]}, "points": [0.8, 0.85, null, 0.92]}]}, {});
 </script>`
 
 func TestParseGraphPopup(t *testing.T) {
@@ -16,8 +17,8 @@ func TestParseGraphPopup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(graphs) != 2 {
-		t.Fatalf("want 2 graphs, got %d", len(graphs))
+	if len(graphs) != 3 {
+		t.Fatalf("want 3 graphs, got %d", len(graphs))
 	}
 	g := graphs[0]
 	if g.Title != "Filesystem size and used space" || g.Step != 120 ||
@@ -40,6 +41,35 @@ func TestParseGraphPopup(t *testing.T) {
 	}
 	if graphs[1].Title != "Growth" {
 		t.Errorf("second graph mis-parsed: %+v", graphs[1])
+	}
+
+	// line curve: flat [v, v, null, v] numbers, not [base, value] pairs
+	line := graphs[2].Curve[0]
+	if len(line.Values) != 4 || line.Values[0] != 0.8 || line.Values[3] != 0.92 {
+		t.Errorf("flat line-curve points mis-parsed: %v", line.Values)
+	}
+	if !math.IsNaN(line.Values[2]) {
+		t.Errorf("null point should be NaN, got %v", line.Values[2])
+	}
+}
+
+func TestPointValueShapes(t *testing.T) {
+	cases := map[string]float64{
+		`5.5`:          5.5,
+		`[1.0, 2.0]`:   2.0, // area: plot the value (2nd)
+		`[3.0, null]`:  3.0, // fall back to base
+		`null`:         math.NaN(),
+		`[null, null]`: math.NaN(),
+	}
+	for in, want := range cases {
+		got := pointValue([]byte(in))
+		if math.IsNaN(want) {
+			if !math.IsNaN(got) {
+				t.Errorf("%s: want NaN, got %v", in, got)
+			}
+		} else if got != want {
+			t.Errorf("%s: want %v, got %v", in, want, got)
+		}
 	}
 }
 
