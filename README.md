@@ -116,7 +116,8 @@ tuichk is built for large sites where the API is slow. It avoids fetching the
 full service list except when asked:
 
 - Startup and auto-refresh fetch only the hosts and the non-OK services. The
-  state filter runs server-side, so the response stays small.
+  "state is not OK" condition is evaluated by the server (a Livestatus query
+  filter), so it returns a few hundred rows instead of every service.
 - The host/service counts in the summary line come from each host's
   `num_services_*` columns, not from a service query.
 - The full service list is fetched once, in the background, the first time you
