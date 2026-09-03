@@ -1,0 +1,21 @@
+# tuicheck configuration — copy to ~/.config/tuicheck/config.toml
+
+# Base URL of your CheckMK site, including the site name.
+url = "https://monitoring.example.com/mysite"
+
+# CheckMK user to authenticate as (an automation user works well).
+username = "automation"
+
+# Command whose stdout is the password — keeps secrets out of this file.
+password_cmd = "pass show checkmk/automation"
+
+# Alternatively, set the password directly (password_cmd wins if both set):
+# password = "..."
+
+# Auto-refresh interval in seconds. 0 disables auto-refresh. Default: 120.
+# Only the cheap problems query runs on this interval; the full service
+# list is fetched at most once per session (r in the Services view refetches).
+# refresh_seconds = 120
+
+# Skip TLS certificate verification (self-signed certs).
+# insecure_tls = false

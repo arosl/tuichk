@@ -1,0 +1,6 @@
+# built binary
+/tuicheck
+
+# local config never belongs in the repo — use config.example.toml
+config.toml
+*.local.toml
