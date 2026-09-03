@@ -709,8 +709,9 @@ func helpContent() string {
 	line("d / u  (^d / ^u)", "half page down / up")
 	line("f / b  (^f/^b, PgDn/Up)", "full page down / up")
 	line("g / G, Home / End", "first / last row")
-	line("H / M / L", "top / middle / bottom of screen")
-	line("zz / zt / zb", "scroll cursor line to center / top / bottom")
+	line("H / M / L", "move cursor to top / middle / bottom of screen")
+	line("zz / zt / zb", "scroll view so cursor line sits center / top / bottom")
+	line("", styleDim.Render("z-chords move the view, not the cursor — no-ops near the list top"))
 	line(":N", "jump to row N")
 
 	b.WriteString("\n" + sec("Search") + "\n")
