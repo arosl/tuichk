@@ -132,6 +132,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var ae apiError
 		if json.Unmarshal(body, &ae) == nil && ae.Title != "" {
+			ae.Title, ae.Detail = clean(ae.Title), clean(ae.Detail)
 			if ae.Detail != "" && ae.Detail != ae.Title {
 				return fmt.Errorf("checkmk API: %s (%d): %s", ae.Title, resp.StatusCode, ae.Detail)
 			}
@@ -196,9 +197,9 @@ func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 			return nil, fmt.Errorf("decoding host: %w", err)
 		}
 		hosts = append(hosts, Host{
-			Name:            ext.Name,
+			Name:            clean(ext.Name),
 			State:           ext.State,
-			PluginOutput:    ext.PluginOutput,
+			PluginOutput:    clean(ext.PluginOutput),
 			Acknowledged:    ext.Acknowledged != 0,
 			InDowntime:      ext.ScheduledDowntimeDepth > 0,
 			LastStateChange: time.Unix(ext.LastStateChange, 0),
@@ -238,11 +239,11 @@ func (c *Client) services(ctx context.Context, columns []string, query string) (
 			return nil, fmt.Errorf("decoding service: %w", err)
 		}
 		services = append(services, Service{
-			HostName:        ext.HostName,
-			Description:     ext.Description,
+			HostName:        clean(ext.HostName),
+			Description:     clean(ext.Description),
 			State:           ext.State,
-			PluginOutput:    ext.PluginOutput,
-			LongOutput:      ext.LongPluginOutput,
+			PluginOutput:    clean(ext.PluginOutput),
+			LongOutput:      clean(ext.LongPluginOutput),
 			Acknowledged:    ext.Acknowledged != 0,
 			InDowntime:      ext.ScheduledDowntimeDepth > 0,
 			LastStateChange: time.Unix(ext.LastStateChange, 0),

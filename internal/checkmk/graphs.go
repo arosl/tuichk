@@ -192,12 +192,12 @@ func parseGraphPopup(body string) ([]Graph, error) {
 }
 
 func (pg popupGraph) toGraph() Graph {
-	g := Graph{Title: pg.Title, Start: pg.Start, End: pg.End, Step: pg.Step}
+	g := Graph{Title: clean(pg.Title), Start: pg.Start, End: pg.End, Step: pg.Step}
 	for _, c := range pg.Curves {
-		curve := Curve{Title: c.Title, Color: c.Color}
+		curve := Curve{Title: clean(c.Title), Color: clean(c.Color)}
 		if last, ok := c.Scalars["last"]; ok && len(last) == 2 {
 			if s, ok := last[1].(string); ok {
-				curve.Last = s
+				curve.Last = clean(s)
 			}
 		}
 		curve.Values = make([]float64, len(c.Points))

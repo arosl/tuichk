@@ -77,7 +77,7 @@ func TestHostsParsesCollection(t *testing.T) {
 func TestAPIErrorSurfaced(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"title":"Unauthorized","status":401,"detail":"wrong credentials"}`))
+		w.Write([]byte(`{"title":"Unauthorized","status":401,"detail":"wrong \u001b]0;pwned\u0007credentials"}`))
 	}))
 	defer srv.Close()
 
@@ -88,5 +88,8 @@ func TestAPIErrorSurfaced(t *testing.T) {
 	}
 	if want := "Unauthorized"; !strings.Contains(err.Error(), want) {
 		t.Errorf("error %q missing %q", err, want)
+	}
+	if strings.ContainsAny(err.Error(), "\x1b\x07") {
+		t.Errorf("error %q leaks control characters from the server", err)
 	}
 }
