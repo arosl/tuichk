@@ -50,7 +50,7 @@ is recommended.
 | Key | Action |
 |---|---|
 | `1` `2` `3` `4` / `tab` | Switch view: Problems · Down · Services · Hosts |
-| `/` | Fuzzy search (matches state, host, service and plugin output — e.g. `crit nfs`) |
+| `/` | Fuzzy search over state, host, service and plugin output — e.g. `crit nfs`; a `!term` excludes matches, fzf-style, e.g. `nfs !ssd` |
 | `enter` | Detail view of selected host/service |
 | `tab` (in detail) | Jump from a service to its host and back; a host's detail lists all its services |
 | `esc` | Clear search / close detail |

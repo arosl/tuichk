@@ -826,6 +826,7 @@ func helpContent() string {
 	b.WriteString("\n" + sec("Search") + "\n")
 	line("/", "fuzzy filter over state, host, service, output")
 	line("", styleDim.Render("e.g. \"crit nfs\", \"down web\", \"warn cert\""))
+	line("!term", "exclude matches — like fzf, e.g. \"nfs !ssd\"")
 	line("↑/↓  (^j/^k, ^n/^p)", "move selection while typing")
 	line("enter / esc", "keep filter / clear it")
 	line(":crit :warn :unknown", "hard state filter — fuzzy search stays within it")

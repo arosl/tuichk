@@ -200,16 +200,55 @@ func (s rowSource) String(i int) string { return s[i].search }
 func (s rowSource) Len() int            { return len(s) }
 
 // fuzzyFilter returns the rows matching query, best match first.
+//
+// Like fzf, a term prefixed with "!" is negated: rows whose search text
+// contains that term (substring, case-insensitive) are excluded. The
+// remaining plain terms are fuzzy-matched. "nfs !ssd" fuzzy-matches nfs
+// and drops anything mentioning ssd; a query of only negations keeps the
+// list in its natural order.
 func fuzzyFilter(rows []row, query string) []row {
 	if strings.TrimSpace(query) == "" {
 		return rows
 	}
-	matches := fuzzy.FindFrom(strings.ToLower(query), rowSource(rows))
+
+	var excludes []string
+	var positive []string
+	for _, tok := range strings.Fields(query) {
+		if len(tok) > 1 && tok[0] == '!' {
+			excludes = append(excludes, strings.ToLower(tok[1:]))
+		} else if tok != "!" {
+			positive = append(positive, tok)
+		}
+	}
+
+	kept := rows
+	if len(excludes) > 0 {
+		kept = kept[:0:0] // fresh slice; never alias the caller's backing array
+		for _, r := range rows {
+			if !containsAny(r.search, excludes) {
+				kept = append(kept, r)
+			}
+		}
+	}
+
+	if len(positive) == 0 {
+		return kept // negations only: keep natural order
+	}
+	matches := fuzzy.FindFrom(strings.ToLower(strings.Join(positive, " ")), rowSource(kept))
 	out := make([]row, 0, len(matches))
 	for _, m := range matches {
-		out = append(out, rows[m.Index])
+		out = append(out, kept[m.Index])
 	}
 	return out
+}
+
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // age renders a compact duration like "45s", "12m", "3h", "5d".

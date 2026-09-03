@@ -96,6 +96,32 @@ func TestFuzzySearchFilters(t *testing.T) {
 	}
 }
 
+func TestNegativeSearch(t *testing.T) {
+	m := key(testModel(t), "3") // services view: HTTPS certificate, Filesystem /var, CPU load
+	// exclude a term
+	m = key(m, "/", "!", "c", "p", "u")
+	for _, r := range m.rows() {
+		if strings.Contains(r.search, "cpu") {
+			t.Errorf("!cpu should exclude CPU load, got %+v", r)
+		}
+	}
+	if got := len(m.rows()); got != 2 {
+		t.Errorf("!cpu should leave 2 of 3 services, got %d", got)
+	}
+	// combine positive fuzzy + negation
+	m = key(m, "esc")
+	m = key(m, "/", "f", "i", "l", "e", " ", "!", "v", "a", "r")
+	if got := len(m.rows()); got != 0 {
+		t.Errorf("'file !var' should drop Filesystem /var, got %d rows", got)
+	}
+	m = key(m, "esc")
+	m = key(m, "/", "c", "e", "r", "t", " ", "!", "c", "p", "u")
+	rows := m.rows()
+	if len(rows) != 1 || rows[0].desc != "HTTPS certificate" {
+		t.Errorf("'cert !cpu' should keep only the certificate, got %+v", rows)
+	}
+}
+
 func TestSearchMatchesStateName(t *testing.T) {
 	m := key(testModel(t), "h") // show handled too: CRIT + WARN + DOWN visible
 	m = key(m, "/", "c", "r", "i", "t", " ", "c", "e", "r", "t")
