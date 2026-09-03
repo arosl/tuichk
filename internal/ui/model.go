@@ -607,11 +607,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.switchView((m.view + 1) % viewCount)
 	case "shift+tab":
 		return m.switchView((m.view + viewCount - 1) % viewCount)
-	case "h":
-		if m.view == viewProblems {
-			m.showHandled = !m.showHandled
-			m.clampCursor(len(m.rows()))
-		}
 	case "r":
 		// Refreshing the heavy full list stays deliberate: only from
 		// the Services view (or :r! from anywhere).
@@ -838,7 +833,7 @@ func helpContent() string {
 	line("j/k d/u f/b g/G", "scroll · esc or q closes")
 
 	b.WriteString("\n" + sec("Data") + "\n")
-	line("h", "Problems view: toggle handled (A ack, D downtime)")
+	line(":handled", "toggle handled problems (A ack, D downtime)")
 	line("", styleDim.Render(fmt.Sprintf(
 		"inverted badge = crit aged %s–%s: the actionable window", fmtDur(hotMinAge), fmtDur(hotMaxAge))))
 	line("r, :r", "refresh hosts + problems")

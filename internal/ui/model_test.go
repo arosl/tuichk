@@ -74,7 +74,7 @@ func TestProblemsViewSortsAndHidesHandled(t *testing.T) {
 		t.Errorf("CRIT service should be second, got %+v", rows[1])
 	}
 
-	m = key(m, "h") // include handled
+	m = key(m, ":", "handled", "enter") // include handled
 	if got := len(m.rows()); got != 3 {
 		t.Errorf("want 3 problems incl. acknowledged, got %d", got)
 	}
@@ -123,7 +123,7 @@ func TestNegativeSearch(t *testing.T) {
 }
 
 func TestSearchMatchesStateName(t *testing.T) {
-	m := key(testModel(t), "h") // show handled too: CRIT + WARN + DOWN visible
+	m := key(testModel(t), ":", "handled", "enter") // show handled too: CRIT + WARN + DOWN visible
 	m = key(m, "/", "c", "r", "i", "t", " ", "c", "e", "r", "t")
 	rows := m.rows()
 	if len(rows) < 1 || rows[0].desc != "HTTPS certificate" || rows[0].state != checkmk.SvcCrit {
@@ -342,7 +342,7 @@ func TestDownViewShowsHandledHosts(t *testing.T) {
 }
 
 func TestStateFilterIsHard(t *testing.T) {
-	m := key(testModel(t), "h") // show handled: DOWN host + CRIT + WARN(acked)
+	m := key(testModel(t), ":", "handled", "enter") // show handled: DOWN host + CRIT + WARN(acked)
 	if got := len(m.rows()); got != 3 {
 		t.Fatalf("expected 3 problems, got %d", got)
 	}
@@ -531,5 +531,14 @@ func TestViewSwitchAndSummary(t *testing.T) {
 		if !strings.Contains(v, want) {
 			t.Errorf("summary missing %q", want)
 		}
+	}
+}
+
+func TestPlainHDoesNotToggleHandled(t *testing.T) {
+	m := testModel(t)
+	before := len(m.rows())
+	m = key(m, "h")
+	if m.showHandled || len(m.rows()) != before {
+		t.Errorf("h should be unbound; showHandled=%v rows %d->%d", m.showHandled, before, len(m.rows()))
 	}
 }

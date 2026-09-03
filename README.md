@@ -60,7 +60,6 @@ is recommended.
 | `g`/`G`, Home/End | Jump to top / bottom |
 | `H`/`M`/`L` | Cursor to top / middle / bottom of screen |
 | `zz`/`zt`/`zb` | Scroll cursor line to center / top / bottom |
-| `h` | Problems view: toggle showing handled (acked / in downtime) |
 | `r` | Refresh now |
 | `?` or `:help` | Full key & command reference |
 | `:q` | Quit (vim-style; `ctrl+c` twice also works) |
@@ -78,7 +77,8 @@ running all day: only `:q` (and friends: `:quit`, `:q!`) or a double
 
 The Problems view is the default. Unhandled problems are sorted by severity
 (host DOWN, then CRIT, UNKNOWN, WARN), newest first within each severity.
-Acknowledged problems are flagged `A`, ones in downtime `D`.
+Acknowledged problems are flagged `A`, ones in downtime `D`; the Problems
+view hides them unless `:handled` is toggled on.
 
 The Down view lists every non-UP host, including acknowledged hosts and hosts
 in downtime that the Problems view hides as handled.
