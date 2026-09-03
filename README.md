@@ -1,4 +1,4 @@
-# tuicheck
+# tuichk
 
 A modern, read-only terminal UI for [CheckMK](https://checkmk.com). It shows
 what your dashboard shows — problems first — with fzf-style fuzzy search,
@@ -6,7 +6,7 @@ talking to the CheckMK **REST API** over HTTP(S). No SSH or site access needed;
 any user that can see the web interface can use it.
 
 ```
- tuicheck  mysite                                          updated 14:16:54
+ tuichk  mysite                                          updated 14:16:54
  Hosts: 2 UP 1 DOWN   Services: 902 OK 1 WARN 2 CRIT 1 UNKNOWN
  [1 Problems]  2 Services   3 Hosts
  STATE F HOST     SERVICE                    AGE  OUTPUT
@@ -21,12 +21,12 @@ any user that can see the web interface can use it.
 make install          # stripped binary into ~/.local/bin
 make install PREFIX=/usr/local
 # or plain go:
-go build -o tuicheck .
+go build -o tuichk .
 ```
 
 ## Configure
 
-Create `~/.config/tuicheck/config.toml` (see `config.example.toml`):
+Create `~/.config/tuichk/config.toml` (see `config.example.toml`):
 
 ```toml
 url = "https://monitoring.example.com/mysite"
@@ -39,7 +39,7 @@ password_cmd = "pass show checkmk/automation"   # stdout = password
 config file. A plain `password = "..."` is also accepted.
 
 Other options: `refresh_seconds` (default 120, 0 = off), `insecure_tls`.
-Config path override: `-config <path>` flag or `TUICHECK_CONFIG` env var.
+Config path override: `-config <path>` flag or `TUICHK_CONFIG` env var.
 
 The user needs no special role — read access to monitoring is enough. An
 [automation user](https://docs.checkmk.com/latest/en/wato_user.html#automation)
@@ -113,7 +113,7 @@ distributed (multi-site) setups.
 
 ## Gentle on the server, snappy in the terminal
 
-tuicheck is built for large, slow sites:
+tuichk is built for large, slow sites:
 
 - Startup and auto-refresh only fetch **hosts + non-OK services**, with the
   state filter applied **server-side** — a small, fast query.
@@ -129,4 +129,4 @@ tuicheck is built for large, slow sites:
 ## Notes
 
 - Works against CheckMK 2.x (REST API 1.0), all editions.
-- Read-only: tuicheck only issues GET requests.
+- Read-only: tuichk only issues GET requests.

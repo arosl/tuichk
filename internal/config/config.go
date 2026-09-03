@@ -1,4 +1,4 @@
-// Package config loads the tuicheck configuration file and resolves
+// Package config loads the tuichk configuration file and resolves
 // secrets (the CheckMK password is obtained by running a user-supplied
 // command, so it never has to live in the config file itself).
 package config
@@ -14,7 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the on-disk configuration for tuicheck.
+// Config is the on-disk configuration for tuichk.
 type Config struct {
 	// URL is the base URL of the CheckMK site, including the site name,
 	// e.g. "https://monitoring.example.com/mysite".
@@ -45,11 +45,11 @@ func DefaultPath() string {
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "tuicheck.toml"
+			return "tuichk.toml"
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "tuicheck", "config.toml")
+	return filepath.Join(base, "tuichk", "config.toml")
 }
 
 // Load reads and validates the config file at path.

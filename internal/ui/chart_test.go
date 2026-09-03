@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuicheck/internal/checkmk"
+	"tuichk/internal/checkmk"
 )
 
 func TestRenderGraph(t *testing.T) {

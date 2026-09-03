@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"tuicheck/internal/checkmk"
+	"tuichk/internal/checkmk"
 )
 
 // Braille cells pack 2x4 dots each, giving a plotting resolution of

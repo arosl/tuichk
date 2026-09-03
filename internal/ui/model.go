@@ -1,4 +1,4 @@
-// Package ui implements the tuicheck terminal interface.
+// Package ui implements the tuichk terminal interface.
 package ui
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/truncate"
 
-	"tuicheck/internal/checkmk"
+	"tuichk/internal/checkmk"
 )
 
 type view int
@@ -805,7 +805,7 @@ func helpContent() string {
 	var b strings.Builder
 	line := func(keys, what string) { b.WriteString("  " + k(keys) + what + "\n") }
 
-	b.WriteString(styleTitle.Render("tuicheck — keys & commands") + "\n\n")
+	b.WriteString(styleTitle.Render("tuichk — keys & commands") + "\n\n")
 
 	b.WriteString(sec("Views") + "\n")
 	line("1 / 2 / 3 / 4", "Problems · Down · Services · Hosts")
@@ -967,7 +967,7 @@ func (m Model) View() string {
 }
 
 func (m Model) viewHeader() string {
-	left := styleTitle.Render(" tuicheck ") + styleDim.Render(m.site)
+	left := styleTitle.Render(" tuichk ") + styleDim.Render(m.site)
 	var right string
 	switch {
 	case m.loading:

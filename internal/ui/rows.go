@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 
-	"tuicheck/internal/checkmk"
+	"tuichk/internal/checkmk"
 )
 
 type rowKind int

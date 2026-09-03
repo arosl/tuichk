@@ -1,4 +1,4 @@
-// tuicheck is a read-only terminal UI for CheckMK, talking to the same
+// tuichk is a read-only terminal UI for CheckMK, talking to the same
 // web interface (REST API) as the browser dashboard.
 package main
 
@@ -11,9 +11,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"tuicheck/internal/checkmk"
-	"tuicheck/internal/config"
-	"tuicheck/internal/ui"
+	"tuichk/internal/checkmk"
+	"tuichk/internal/config"
+	"tuichk/internal/ui"
 )
 
 const exampleConfig = `url = "https://monitoring.example.com/mysite"
@@ -24,12 +24,12 @@ password_cmd = "pass show checkmk/automation"
 `
 
 func main() {
-	configPath := flag.String("config", "", "path to config file (default: ~/.config/tuicheck/config.toml)")
+	configPath := flag.String("config", "", "path to config file (default: ~/.config/tuichk/config.toml)")
 	flag.Parse()
 
 	path := *configPath
 	if path == "" {
-		if env := os.Getenv("TUICHECK_CONFIG"); env != "" {
+		if env := os.Getenv("TUICHK_CONFIG"); env != "" {
 			path = env
 		} else {
 			path = config.DefaultPath()
@@ -38,7 +38,7 @@ func main() {
 
 	cfg, err := config.Load(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "tuicheck: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tuichk: %v\n", err)
 		if errors.Is(err, fs.ErrNotExist) {
 			fmt.Fprintf(os.Stderr, "\nCreate %s with:\n\n%s", path, exampleConfig)
 		}
@@ -47,13 +47,13 @@ func main() {
 
 	password, err := cfg.ResolvePassword()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "tuicheck: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tuichk: %v\n", err)
 		os.Exit(1)
 	}
 
 	hotMin, hotMax, err := cfg.HotWindow()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "tuicheck: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tuichk: %v\n", err)
 		os.Exit(1)
 	}
 	ui.SetHotWindow(hotMin, hotMax)
@@ -63,7 +63,7 @@ func main() {
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "tuicheck: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tuichk: %v\n", err)
 		os.Exit(1)
 	}
 }

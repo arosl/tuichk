@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"tuicheck/internal/checkmk"
+	"tuichk/internal/checkmk"
 )
 
 func testModel(t *testing.T) Model {

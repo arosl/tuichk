@@ -1,4 +1,4 @@
-# tuicheck configuration — copy to ~/.config/tuicheck/config.toml
+# tuichk configuration — copy to ~/.config/tuichk/config.toml
 
 # Base URL of your CheckMK site, including the site name.
 url = "https://monitoring.example.com/mysite"
