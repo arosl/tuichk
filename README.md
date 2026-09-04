@@ -125,7 +125,9 @@ command. Set `wiki_url` to a page template: `{host}` is the full host name,
 `{short}` its first DNS label, both URL-escaped. For example
 `wiki_url = "https://wiki.example.com/index.php?search={short}"`.
 
-`:ssh` opens a shell on the selected host (from the list or an open detail).
+`:ssh` opens a shell on the selected host. All three commands take the row
+under the cursor, or the host or service whose detail is open, and `:` works
+in the detail view too.
 Inside zellij, tmux, WezTerm, kitty or Ghostty it opens in a new pane next to
 tuichk; kitty needs `allow_remote_control yes`, Ghostty needs 1.3 or newer on
 macOS, where the split is a normal shell with the ssh command typed into it

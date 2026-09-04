@@ -1008,13 +1008,22 @@ func (m Model) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	if m.detail != nil {
-		hint := "esc close · j/k scroll"
+		hint := "esc close · j/k scroll · :ssh :wiki :browser"
 		if m.detail.kind == rowService {
 			hint += " · tab host"
 		} else if m.detailPrev != nil {
 			hint += " · tab back"
 		}
-		box := styleDetailBox.Render(m.detailVP.View() + "\n" + styleDim.Render(hint))
+		// The overlay covers the footer, so the ":" line and one-shot
+		// notices are drawn on the box's bottom line instead.
+		bottom := styleDim.Render(hint)
+		switch {
+		case m.cmdMode:
+			bottom = strings.TrimPrefix(m.cmdLineView(), " ")
+		case m.cmdErr != "":
+			bottom = stateStyles[1].Render(m.cmdErr)
+		}
+		box := styleDetailBox.Render(m.detailVP.View() + "\n" + bottom)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	return b.String()

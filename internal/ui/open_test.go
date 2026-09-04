@@ -126,8 +126,8 @@ func TestWikiURL(t *testing.T) {
 	if got != "https://w/web%2001?full=web+01.example.com&x=a&b" {
 		t.Errorf("wikiURL = %q", got)
 	}
-	got = wikiURL("https://first.wiki.no/wiktig_Search/?go=1&search={host}", "a&b=c")
-	if got != "https://first.wiki.no/wiktig_Search/?go=1&search=a%26b%3Dc" {
+	got = wikiURL("https://wiki.example.com/search?go=1&q={host}", "a&b=c")
+	if got != "https://wiki.example.com/search?go=1&q=a%26b%3Dc" {
 		t.Errorf("query escaping = %q", got)
 	}
 	if got := wikiURL("https://w/{short}", "plain"); got != "https://w/plain" {

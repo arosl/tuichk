@@ -828,3 +828,33 @@ func TestCommandCompletion(t *testing.T) {
 		t.Errorf("no match should leave the line alone: %q", m.cmd.Value())
 	}
 }
+
+func TestColonInDetail(t *testing.T) {
+	m := key(testModel(t), "enter") // db02 detail
+	if m.detail == nil {
+		t.Fatal("detail should be open")
+	}
+	if !strings.Contains(m.View(), ":ssh :wiki :browser") {
+		t.Error("detail footer should mention the commands")
+	}
+	m = key(m, ":", "wik")
+	if !m.cmdMode || m.detail == nil {
+		t.Fatalf("':' in detail: cmdMode=%v detail open=%v", m.cmdMode, m.detail != nil)
+	}
+	if v := m.View(); !strings.Contains(v, ":wik") || strings.Contains(v, ":ssh :wiki") {
+		t.Errorf("the typed command line must be visible on the detail box, not hidden under it:\n%s", v)
+	}
+	upd, _ := key(m, "esc").Update(noticeMsg("opened db02 in browser"))
+	if !strings.Contains(upd.(Model).View(), "opened db02 in browser") {
+		t.Error("a notice must be visible while the detail is open")
+	}
+	m = m.WithExternal(External{WikiURL: "https://w/{host}", BrowserCmd: "true {url}"})
+	_, cmd := m.runCommand("wiki")
+	if msg, _ := cmd().(noticeMsg); msg != "opened db02 in browser" {
+		t.Errorf(":wiki from detail should target the detail host, got %q", msg)
+	}
+	m = key(m, "wiki", "enter")
+	if m.detail == nil || m.cmdMode {
+		t.Error("running a command should leave the detail open")
+	}
+}
