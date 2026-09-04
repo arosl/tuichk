@@ -1,6 +1,6 @@
 # tuichk
 
-A read-only terminal UI for [CheckMK](https://checkmk.com), showing the same
+A terminal UI for [CheckMK](https://checkmk.com), showing the same
 status your dashboard does, problems first, with fzf-style fuzzy search. It
 talks to the CheckMK REST API over HTTP(S); no SSH or site access is needed,
 and any user who can log into the web interface can use it.
@@ -50,19 +50,20 @@ is recommended.
 
 | Key | Action |
 |---|---|
-| `1` `2` `3` `4` / `tab` | Switch view: Problems · Down · Services · Hosts |
+| `tab` / `shift+tab` | Next / previous view: Problems · Down · Services · Hosts |
 | `/` | Fuzzy search over state, host, service and plugin output — e.g. `crit nfs`; a `!term` excludes matches, fzf-style, e.g. `nfs !ssd` |
 | `enter` | Detail view of selected host/service |
 | `tab` (in detail) | Jump from a service to its host and back; a host's detail lists all its services |
 | `esc` | Clear search / close detail |
 | `j`/`k` / arrows | Move one row |
+| `12G` `5j` `3d` … | Count prefix, vim-style: jump to row 12, five rows down, three half pages; the pending count shows in the footer |
 | `d`/`u` (or `ctrl+d`/`ctrl+u`) | Half page down / up |
 | `f`/`b` (or `ctrl+f`/`ctrl+b`, PgDn/PgUp) | Full page down / up |
 | `g`/`G`, Home/End | Jump to top / bottom |
 | `H`/`M`/`L` | Cursor to top / middle / bottom of screen |
 | `zz`/`zt`/`zb` | Scroll cursor line to center / top / bottom |
 | `r` | Refresh now |
-| `?` or `:help` | Full key & command reference |
+| `?` or `:help` | Full key & command reference; scrolls with the movement keys, `esc` closes |
 | `:q` | Quit (vim-style; `ctrl+c` twice also works) |
 
 While typing a search, the arrow keys (or `ctrl+j`/`ctrl+k`, `ctrl+n`/`ctrl+p`)
@@ -89,11 +90,13 @@ old get an inverted red badge and sort above the others, on the assumption
 that they are recent enough to still be worth acting on. The bounds are
 configurable with `hot_min` and `hot_max`.
 
-The `:` command line accepts `:q` (and `:quit`, `:q!`), the view names
-`:problems` `:down` `:services` `:hosts` (or `:1`–`:4`, `:p` `:d` `:s`),
+The `:` command line has tab completion (repeat `tab` to cycle the matches)
+and up/down recall of the session's earlier commands. It accepts `:q` (and `:quit`, `:q!`), the view names
+`:problems` `:down` `:services` `:hosts` (or `:p` `:d` `:s`),
 `:r`/`:refresh` (`:r!` also refetches the full service list), `:handled`,
-`:mouse`,
-`:N` to jump to row N, and `:help`.
+`:mouse`, `:browser`, `:wiki`, `:ssh` (see below),
+`:N` to jump to row N, like `NG` (`:numbers` or `:nu` shows the numbers),
+and `:help`.
 
 State filters `:crit`, `:warn`, `:unknown` (and `:ok`, `:all` to clear)
 restrict the view to one state before fuzzy search runs, so `/nfs` under
@@ -110,6 +113,29 @@ in the config or `:mouse` at runtime (which also turns it off again). While
 on, the wheel scrolls the list and the detail view, a click selects a row, a
 second click on the selected row opens it, and clicking a tab switches view.
 Select text with shift-drag (alt-drag in some terminals) while it is on.
+
+## Browser, wiki and SSH
+
+`:browser` opens the selected host or service in the CheckMK web GUI, using
+`open` on macOS and `xdg-open` elsewhere. Set `browser_cmd` to change that;
+`{url}` in it is replaced by the link, already shell-quoted.
+
+`:wiki` opens the selected host in your own wiki through the same browser
+command. Set `wiki_url` to a page template: `{host}` is the full host name,
+`{short}` its first DNS label, both URL-escaped. For example
+`wiki_url = "https://wiki.example.com/index.php?search={short}"`.
+
+`:ssh` opens a shell on the selected host (from the list or an open detail).
+Inside zellij, tmux, WezTerm, kitty or Ghostty it opens in a new pane next to
+tuichk; kitty needs `allow_remote_control yes`, Ghostty needs 1.3 or newer on
+macOS, where the split is a normal shell with the ssh command typed into it
+so the pane closes when ssh ends, and opens a new window on Linux.
+Anywhere else tuichk steps aside, runs ssh in the same window, and
+comes back when it exits. Set `ssh_inline = true` to get that everywhere.
+`ssh_cmd` replaces the default `ssh {host}`, e.g. `ssh -J bastion {host}`;
+`{host}` is the CheckMK host name, shell-quoted. Both commands run through
+`sh -c`, and the substituted value is single-quoted so a hostile host name
+cannot inject shell.
 
 ## Graphs
 
@@ -141,7 +167,8 @@ full service list except when asked:
 ## Notes
 
 - Works against CheckMK 2.x (REST API 1.0), all editions.
-- Read-only: tuichk only issues GET requests.
+- Read-only against CheckMK: tuichk only issues GET requests. The only
+  things it runs locally are the configured browser and ssh commands.
 
 ## License
 

@@ -89,3 +89,21 @@ func TestMouseOption(t *testing.T) {
 		t.Error("mouse = true not honored")
 	}
 }
+
+func TestExternalCommands(t *testing.T) {
+	cfg, err := Load(write(t, "url = \"https://x/site\"\nusername = \"u\"\npassword = \"p\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BrowserCmd != "" || cfg.SSHCmd != "" || cfg.SSHInline {
+		t.Errorf("external commands should default empty: %+v", cfg)
+	}
+	cfg, err = Load(write(t, "url = \"https://x/site\"\nusername = \"u\"\npassword = \"p\"\n"+
+		"browser_cmd = \"firefox {url}\"\nssh_cmd = \"ssh -J bastion {host}\"\nssh_inline = true\nwiki_url = \"https://w/{short}\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BrowserCmd != "firefox {url}" || cfg.SSHCmd != "ssh -J bastion {host}" || !cfg.SSHInline || cfg.WikiURL != "https://w/{short}" {
+		t.Errorf("external commands not honored: %+v", cfg)
+	}
+}

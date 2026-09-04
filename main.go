@@ -1,4 +1,4 @@
-// tuichk is a read-only terminal UI for CheckMK, talking to the same
+// tuichk is a terminal UI for CheckMK, talking to the same
 // web interface (REST API) as the browser dashboard.
 package main
 
@@ -22,6 +22,7 @@ password_cmd = "pass show checkmk/automation"
 # refresh_seconds = 30
 # insecure_tls = false
 # mouse = false
+# ssh_cmd = "ssh {host}"
 `
 
 func main() {
@@ -61,6 +62,13 @@ func main() {
 
 	client := checkmk.New(cfg.URL, cfg.Username, password, cfg.InsecureTLS)
 	model := ui.New(client, cfg.SiteName(), cfg.Refresh())
+	model = model.WithExternal(ui.External{
+		BaseURL:    cfg.URL,
+		BrowserCmd: cfg.BrowserCmd,
+		SSHCmd:     cfg.SSHCmd,
+		SSHInline:  cfg.SSHInline,
+		WikiURL:    cfg.WikiURL,
+	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}
 	if cfg.Mouse {

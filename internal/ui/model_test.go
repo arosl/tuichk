@@ -54,6 +54,12 @@ func key(m tea.Model, keys ...string) Model {
 			msg = tea.KeyMsg{Type: tea.KeyEnter}
 		case "esc":
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
+		case "tab":
+			msg = tea.KeyMsg{Type: tea.KeyTab}
+		case "up":
+			msg = tea.KeyMsg{Type: tea.KeyUp}
+		case "down":
+			msg = tea.KeyMsg{Type: tea.KeyDown}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 		}
@@ -82,7 +88,7 @@ func TestProblemsViewSortsAndHidesHandled(t *testing.T) {
 }
 
 func TestFuzzySearchFilters(t *testing.T) {
-	m := key(testModel(t), "3") // services view (full list already cached)
+	m := key(testModel(t), ":", "s", "enter") // services view (full list already cached)
 	if got := len(m.rows()); got != 3 {
 		t.Fatalf("want 3 services, got %d", got)
 	}
@@ -98,7 +104,7 @@ func TestFuzzySearchFilters(t *testing.T) {
 }
 
 func TestNegativeSearch(t *testing.T) {
-	m := key(testModel(t), "3") // services view: HTTPS certificate, Filesystem /var, CPU load
+	m := key(testModel(t), ":", "s", "enter") // services view: HTTPS certificate, Filesystem /var, CPU load
 	// exclude a term
 	m = key(m, "/", "!", "c", "p", "u")
 	for _, r := range m.rows() {
@@ -139,7 +145,7 @@ func TestSearchMatchesStateName(t *testing.T) {
 }
 
 func TestServicesViewEnrichesOutputFromProblems(t *testing.T) {
-	m := key(testModel(t), "3")
+	m := key(testModel(t), ":", "s", "enter")
 	for _, r := range m.rows() {
 		if r.desc == "HTTPS certificate" && !strings.Contains(r.output, "cert expires") {
 			t.Errorf("problem output not merged into cached list row: %+v", r)
@@ -162,7 +168,7 @@ func TestServicesViewLazyFetchTriggered(t *testing.T) {
 }
 
 func TestPagingKeys(t *testing.T) {
-	m := key(testModel(t), "3") // services view, 3 rows
+	m := key(testModel(t), ":", "s", "enter") // services view, 3 rows
 	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
 	m = upd.(Model)
 	if want := len(m.rows()) - 1; m.cursor != want {
@@ -176,8 +182,8 @@ func TestPagingKeys(t *testing.T) {
 }
 
 func TestVimMotions(t *testing.T) {
-	m := key(testModel(t), "3") // services view, 3 rows
-	m = key(m, "f")             // plain-key full page (zellij-safe)
+	m := key(testModel(t), ":", "s", "enter") // services view, 3 rows
+	m = key(m, "f")                           // plain-key full page (zellij-safe)
 	if want := len(m.rows()) - 1; m.cursor != want {
 		t.Errorf("f should page down, cursor=%d want %d", m.cursor, want)
 	}
@@ -204,7 +210,7 @@ func TestVimMotions(t *testing.T) {
 }
 
 func TestSearchModeSelectionKeys(t *testing.T) {
-	m := key(testModel(t), "3", "/")
+	m := key(testModel(t), ":", "s", "enter", "/")
 	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	m = upd.(Model)
 	if m.cursor != 1 {
@@ -235,10 +241,10 @@ func TestColonCommands(t *testing.T) {
 	if m.view != viewServices {
 		t.Errorf(":services should switch view, got %v", m.view)
 	}
-	if m = colon(t, m, "2"); m.view != viewDown {
+	if m = colon(t, m, "d"); m.view != viewDown {
 		t.Errorf(":2 should switch to the Down view, got %v", m.view)
 	}
-	if m = colon(t, m, "3"); m.view != viewServices {
+	if m = colon(t, m, "s"); m.view != viewServices {
 		t.Errorf(":3 is the services alias, got %v", m.view)
 	}
 	if m = colon(t, m, "hosts"); m.view != viewHosts || len(m.rows()) != 2 {
@@ -251,14 +257,14 @@ func TestColonCommands(t *testing.T) {
 		t.Errorf(":99 should jump (clamped) to last row, cursor=%d", m.cursor)
 	}
 
-	// :help opens the reference; any key closes it
+	// :help opens the reference; esc closes it
 	m = colon(t, m, "help")
 	if !m.helpOpen || !strings.Contains(m.View(), "keys & commands") {
 		t.Error(":help should open the reference overlay")
 	}
-	m = key(m, "j")
+	m = key(m, "esc")
 	if m.helpOpen {
-		t.Error("any key should close help")
+		t.Error("esc should close help")
 	}
 
 	// :r! refetches everything
@@ -279,7 +285,7 @@ func TestScrollChordsAndCursorVisibility(t *testing.T) {
 			Description: "svc", State: checkmk.SvcOK, LastStateChange: time.Now()}
 	}
 	upd, _ = upd.Update(allSvcsMsg{at: time.Now(), services: svcs})
-	m = key(upd.(Model), "3") // services view, 100 rows
+	m = key(upd.(Model), ":", "s", "enter") // services view, 100 rows
 	vis := m.tableHeight()
 
 	visible := func(ctx string) {
@@ -330,13 +336,13 @@ func TestDownViewShowsHandledHosts(t *testing.T) {
 			{Name: "unreach-dt", State: checkmk.HostUnreachable, InDowntime: true},
 		},
 	})
-	m = key(upd.(Model), "2")
+	m = key(upd.(Model), ":", "d", "enter")
 	rows := m.rows()
 	if m.view != viewDown || len(rows) != 3 {
 		t.Fatalf("Down view should list all 3 non-UP hosts incl. handled, got %d", len(rows))
 	}
 	// Problems view hides the handled ones.
-	m = key(m, "1")
+	m = key(m, ":", "p", "enter")
 	if got := len(m.rows()); got != 1 {
 		t.Errorf("Problems view should show only the unhandled DOWN host, got %d", got)
 	}
@@ -473,7 +479,7 @@ func TestDetailOverlay(t *testing.T) {
 }
 
 func TestDetailFetchesMissingOutput(t *testing.T) {
-	m := key(testModel(t), "3", "/", "c", "p", "u", "enter") // CPU load: OK, no output cached
+	m := key(testModel(t), ":", "s", "enter", "/", "c", "p", "u", "enter") // CPU load: OK, no output cached
 	m, cmd := m.openDetail(m.rows()[0])
 	if !m.detailLoading || cmd == nil {
 		t.Fatal("detail on output-less service should fetch live output")
@@ -522,7 +528,7 @@ func TestTabJumpsServiceToHostAndBack(t *testing.T) {
 }
 
 func TestViewSwitchAndSummary(t *testing.T) {
-	m := key(testModel(t), "4")
+	m := key(testModel(t), ":", "hosts", "enter")
 	if got := len(m.rows()); got != 2 {
 		t.Errorf("want 2 hosts, got %d", got)
 	}
@@ -643,5 +649,182 @@ func TestMouseCommandToggles(t *testing.T) {
 	}
 	if !New(nil, "x", 0).EnableMouse().mouse {
 		t.Error("EnableMouse should set the flag")
+	}
+}
+
+func TestDigitKeysAreNotViews(t *testing.T) {
+	m := key(testModel(t), "3")
+	if m.view != viewProblems {
+		t.Errorf("plain 3 switched view to %v", m.view)
+	}
+	// A bare number on the : line is a row jump, never a view.
+	m = colon(t, m, "2")
+	if m.view != viewProblems || m.cursor != 1 {
+		t.Errorf("':2' should jump to row 2 in the same view: view=%v cursor=%d", m.view, m.cursor)
+	}
+	m = colon(t, m, "1")
+	if m.cursor != 0 {
+		t.Errorf("':1' cursor = %d", m.cursor)
+	}
+}
+
+func TestNumbersToggle(t *testing.T) {
+	m := testModel(t)
+	if strings.Contains(m.View(), "# STATE") {
+		t.Fatal("numbers shown by default")
+	}
+	m = colon(t, m, "numbers")
+	if !m.showNumbers {
+		t.Fatal(":numbers did not toggle")
+	}
+	v := m.View()
+	if !strings.Contains(v, "# STATE") || !strings.Contains(v, "▌ 1 DOWN") || !strings.Contains(v, "\n  2 CRIT") {
+		t.Errorf("numbered view missing column:\n%s", v)
+	}
+	m = colon(t, m, "nu")
+	if m.showNumbers {
+		t.Error(":nu did not toggle back")
+	}
+}
+
+func TestCountPrefix(t *testing.T) {
+	m := key(testModel(t), ":", "s", "enter") // services view, 3 rows
+	m = key(m, "3", "G")
+	if m.cursor != 2 || m.count != 0 {
+		t.Errorf("3G: cursor=%d count=%d", m.cursor, m.count)
+	}
+	m = key(m, "2", "k")
+	if m.cursor != 0 {
+		t.Errorf("2k from row 3: cursor=%d", m.cursor)
+	}
+	m = key(m, "2", "j")
+	if m.cursor != 2 {
+		t.Errorf("2j: cursor=%d", m.cursor)
+	}
+	m = key(m, "2", "g")
+	if m.cursor != 1 {
+		t.Errorf("2g should go to row 2: cursor=%d", m.cursor)
+	}
+	m = key(m, "9", "9", "G")
+	if m.cursor != 2 {
+		t.Errorf("99G should clamp to the last row: cursor=%d", m.cursor)
+	}
+	// The pending count is visible, esc drops it, a leading 0 is ignored.
+	m = key(m, "1", "2")
+	if m.count != 12 || !strings.Contains(m.View(), "12  3/3") {
+		t.Errorf("pending count not shown: count=%d", m.count)
+	}
+	m = key(m, "esc")
+	if m.count != 0 {
+		t.Errorf("esc should clear the count, got %d", m.count)
+	}
+	m = key(m, "0", "k")
+	if m.cursor != 1 {
+		t.Errorf("leading 0 must not be a count: cursor=%d", m.cursor)
+	}
+	// A count applies to the next key only, never to the one after.
+	m = key(m, "2", "G", "k")
+	if m.cursor != 0 {
+		t.Errorf("count leaked into the following key: cursor=%d", m.cursor)
+	}
+}
+
+func TestHelpScrolls(t *testing.T) {
+	m := testModel(t)
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 16}) // 8-line box, help is far longer
+	m = key(upd.(Model), "?")
+	if !m.helpOpen || m.helpVP.YOffset != 0 {
+		t.Fatalf("help open=%v offset=%d", m.helpOpen, m.helpVP.YOffset)
+	}
+	if !strings.Contains(m.View(), "Views") || strings.Contains(m.View(), ":numbers") {
+		t.Fatal("the top of the help should be visible and the command section below the fold")
+	}
+	m = key(m, "j", "j", "j")
+	if !m.helpOpen || m.helpVP.YOffset != 3 {
+		t.Errorf("j should scroll the help: open=%v offset=%d", m.helpOpen, m.helpVP.YOffset)
+	}
+	m = key(m, "G")
+	if !strings.Contains(m.View(), "quit (also :quit") {
+		t.Error("G should reach the end of the reference")
+	}
+	m = key(m, "g")
+	if m.helpVP.YOffset != 0 {
+		t.Errorf("g should go back to the top, offset=%d", m.helpVP.YOffset)
+	}
+	m = key(m, "d")
+	if m.helpVP.YOffset == 0 {
+		t.Error("d should page down")
+	}
+	m = key(m, "q")
+	if m.helpOpen {
+		t.Error("q should close help")
+	}
+	// Reopening keeps the position, a resize keeps it open.
+	m = key(m, "?")
+	if m.helpVP.YOffset == 0 {
+		t.Error("reopening should keep the scroll position")
+	}
+	upd, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if !upd.(Model).helpOpen {
+		t.Error("resize should keep help open")
+	}
+}
+
+func TestCommandHistory(t *testing.T) {
+	m := testModel(t)
+	m = key(m, ":", "hosts", "enter")
+	m = key(m, ":", "d", "enter")
+	m = key(m, ":", "d", "enter") // consecutive duplicate is kept once
+	m = key(m, ":", "x")
+	m = key(m, "up")
+	if m.cmd.Value() != "d" {
+		t.Errorf("up = %q", m.cmd.Value())
+	}
+	m = key(m, "up")
+	if m.cmd.Value() != "hosts" {
+		t.Errorf("up up = %q", m.cmd.Value())
+	}
+	m = key(m, "up") // past the oldest stays put
+	if m.cmd.Value() != "hosts" {
+		t.Errorf("up past oldest = %q", m.cmd.Value())
+	}
+	m = key(m, "down", "down")
+	if m.cmd.Value() != "x" {
+		t.Errorf("down back to the draft = %q", m.cmd.Value())
+	}
+	m = key(m, "up", "enter")
+	if m.view != viewDown {
+		t.Error("recalled command should run")
+	}
+	if len(m.cmdHist) != 2 {
+		t.Errorf("history = %v", m.cmdHist)
+	}
+}
+
+func TestCommandCompletion(t *testing.T) {
+	m := key(testModel(t), ":", "h", "tab")
+	if m.cmd.Value() != "handled" || !strings.Contains(m.View(), "handled help hosts") {
+		t.Errorf("first tab: value=%q", m.cmd.Value())
+	}
+	m = key(m, "tab", "tab")
+	if m.cmd.Value() != "hosts" {
+		t.Errorf("cycling: value=%q", m.cmd.Value())
+	}
+	m = key(m, "tab")
+	if m.cmd.Value() != "handled" {
+		t.Errorf("wraps around: value=%q", m.cmd.Value())
+	}
+	m = key(m, "enter")
+	if !m.showHandled {
+		t.Error("completed command should run")
+	}
+	// A unique prefix completes fully and shows no list; typing resets.
+	m = key(m, ":", "wi", "tab")
+	if m.cmd.Value() != "wiki" || strings.Contains(m.View(), "wiki wiki") {
+		t.Errorf("unique completion: value=%q", m.cmd.Value())
+	}
+	m = key(m, "esc", ":", "zz", "tab")
+	if m.cmd.Value() != "zz" {
+		t.Errorf("no match should leave the line alone: %q", m.cmd.Value())
 	}
 }

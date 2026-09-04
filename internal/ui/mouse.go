@@ -50,12 +50,16 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	m.quitArmed = false
 	m.cmdErr = ""
+	m.count = 0
 
 	if m.helpOpen {
 		if click {
 			m.helpOpen = false
+			return m, nil
 		}
-		return m, nil
+		var cmd tea.Cmd
+		m.helpVP, cmd = m.helpVP.Update(msg)
+		return m, cmd
 	}
 	if m.detail != nil {
 		// The viewport scrolls itself on wheel events; clicks are ignored

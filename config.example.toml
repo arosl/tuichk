@@ -32,3 +32,21 @@ password_cmd = "pass show checkmk/automation"
 # Go duration strings. Defaults:
 # hot_min = "15m"
 # hot_max = "4h"
+
+# :browser opens the selected host/service in the CheckMK web GUI. {url}
+# is replaced by the shell-quoted link; no quotes needed around it.
+# Default: "open {url}" on macOS, "xdg-open {url}" elsewhere.
+# browser_cmd = "firefox -new-tab {url}"
+
+# :ssh opens a shell on the selected host. {host} is the CheckMK host
+# name, shell-quoted. Inside zellij, tmux, WezTerm, kitty (with remote
+# control on) or Ghostty 1.3+ on macOS it opens in a new pane; elsewhere
+# tuichk steps aside and runs it in place until it exits. ssh_inline = true
+# forces the in-place behaviour everywhere.
+# ssh_cmd = "ssh -l admin {host}"
+# ssh_inline = false
+
+# :wiki opens the selected host in your wiki. {host} is the full CheckMK
+# host name, {short} its first DNS label (web01 for web01.example.com),
+# both URL-escaped. Opened with browser_cmd like :browser.
+# wiki_url = "https://wiki.example.com/{short}"

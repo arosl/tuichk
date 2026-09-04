@@ -87,18 +87,27 @@ type Model struct {
 	cursor      int
 	scroll      int // first visible row index
 	showHandled bool
-	stateFilter int  // -1 = all; else a checkmk.Svc* class, see matchesClass
-	pendingZ    bool // a "z" was pressed, awaiting z/t/b
-	quitArmed   bool // one quit key seen; a second confirms
-	mouse       bool // mouse capture on, see mouse.go
+	stateFilter int      // -1 = all; else a checkmk.Svc* class, see matchesClass
+	pendingZ    bool     // a "z" was pressed, awaiting z/t/b
+	quitArmed   bool     // one quit key seen; a second confirms
+	mouse       bool     // mouse capture on, see mouse.go
+	showNumbers bool     // line numbers in the list, for :N
+	count       int      // pending vim count prefix (12G, 5j); 0 = none
+	ext         External // :browser and :ssh, see open.go
 
 	searching bool
 	search    textinput.Model
 
-	cmdMode  bool // vim-style ":" command line
-	cmd      textinput.Model
-	cmdErr   string
-	helpOpen bool
+	cmdMode    bool // vim-style ":" command line
+	cmd        textinput.Model
+	cmdHist    []string // this session's ":" lines, oldest first
+	cmdHistPos int      // where up/down are in cmdHist; len = the draft
+	cmdDraft   string   // what was typed before walking the history
+	cmdTabs    []string // tab completion candidates being cycled
+	cmdTabIdx  int
+	cmdErr     string
+	helpOpen   bool
+	helpVP     viewport.Model // the reference is longer than most windows
 
 	detail        *row
 	detailVP      viewport.Model
@@ -339,6 +348,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.detail != nil {
 			m.resizeDetail()
 		}
+		if m.helpOpen {
+			m = m.openHelp()
+		}
 		return m, nil
 
 	case problemsMsg:
@@ -425,6 +437,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+	case noticeMsg:
+		m.cmdErr = string(msg)
+		return m, nil
 	}
 	return m, nil
 }
@@ -443,36 +458,33 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Help overlay: any key dismisses it.
+	// Help overlay: scrolls like the detail view, closes on esc/q/?.
 	if m.helpOpen {
-		m.helpOpen = false
+		switch msg.String() {
+		case "esc", "q", "?", "enter":
+			m.helpOpen = false
+		case "g", "home":
+			m.helpVP.GotoTop()
+		case "G", "end":
+			m.helpVP.GotoBottom()
+		default:
+			var cmd tea.Cmd
+			m.helpVP, cmd = m.helpVP.Update(msg)
+			return m, cmd
+		}
 		return m, nil
 	}
 
 	if m.cmdMode {
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.cmdMode = false
-			m.cmd.Blur()
-			m.cmd.SetValue("")
-		case tea.KeyEnter:
-			line := strings.TrimSpace(m.cmd.Value())
-			m.cmdMode = false
-			m.cmd.Blur()
-			m.cmd.SetValue("")
-			return m.runCommand(line)
-		default:
-			var cmd tea.Cmd
-			m.cmd, cmd = m.cmd.Update(msg)
-			return m, cmd
-		}
-		return m, nil
+		return m.cmdKey(msg)
 	}
 
 	// Detail overlay has its own small keymap; the viewport already
 	// understands j/k/d/u/f/b, g/G are added here.
 	if m.detail != nil {
 		switch msg.String() {
+		case ":": // :browser and :ssh act on the open detail
+			return m, m.openCmd()
 		case "esc", "enter", "q":
 			m.detail = nil
 			m.detailLoading = false
@@ -565,12 +577,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Digits build a vim-style count for the next motion: 12G goes to
+	// row 12, 5j moves five. A leading 0 is not a count.
+	if k := msg.String(); len(k) == 1 && k[0] >= '0' && k[0] <= '9' && (m.count > 0 || k != "0") {
+		if m.count < 100000 {
+			m.count = m.count*10 + int(k[0]-'0')
+		}
+		return m, nil
+	}
+	count, n := m.count, m.count
+	m.count = 0
+	if n == 0 {
+		n = 1
+	}
+
 	switch msg.String() {
 	case ":":
-		m.cmdMode = true
-		m.cmdErr = ""
-		m.cmd.Focus()
-		return m, textinput.Blink
+		return m, m.openCmd()
 	case "z":
 		m.pendingZ = true
 	case "H": // top of screen
@@ -599,14 +622,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.search.SetValue("")
 			m.clampCursor(len(m.rows()))
 		}
-	case "1":
-		return m.switchView(viewProblems)
-	case "2":
-		return m.switchView(viewDown)
-	case "3":
-		return m.switchView(viewServices)
-	case "4":
-		return m.switchView(viewHosts)
 	case "tab":
 		return m.switchView((m.view + 1) % viewCount)
 	case "shift+tab":
@@ -616,32 +631,36 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// the Services view (or :r! from anywhere).
 		return m.refresh(m.view == viewServices)
 	case "?":
-		m.helpOpen = true
+		m = m.openHelp()
 	case "j", "down":
-		m.cursor++
+		m.cursor += n
 		m.clampCursor(len(rows))
 	case "k", "up":
-		m.cursor--
+		m.cursor -= n
 		m.clampCursor(len(rows))
-	case "g", "home":
+	case "g", "home", "G", "end":
+		// g/G go to the first/last row; with a count both go to row N.
 		m.cursor = 0
-		m.clampCursor(len(rows))
-	case "G", "end":
-		m.cursor = len(rows) - 1
+		if msg.String() == "G" || msg.String() == "end" {
+			m.cursor = len(rows) - 1
+		}
+		if count > 0 {
+			m.cursor = count - 1
+		}
 		m.clampCursor(len(rows))
 	// Plain d/u/f/b work alongside the ctrl variants so paging still
 	// works inside multiplexers (zellij, tmux) that eat ctrl keys.
 	case "ctrl+d", "d":
-		m.cursor += vis / 2
+		m.cursor += n * (vis / 2)
 		m.clampCursor(len(rows))
 	case "ctrl+u", "u":
-		m.cursor -= vis / 2
+		m.cursor -= n * (vis / 2)
 		m.clampCursor(len(rows))
 	case "ctrl+f", "f", "pgdown":
-		m.cursor += vis - 1
+		m.cursor += n * (vis - 1)
 		m.clampCursor(len(rows))
 	case "ctrl+b", "b", "pgup":
-		m.cursor -= vis - 1
+		m.cursor -= n * (vis - 1)
 		m.clampCursor(len(rows))
 	case "enter":
 		if m.cursor < len(rows) {
@@ -673,13 +692,13 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "q", "q!", "qa", "quit", "exit":
 		return m, tea.Quit
-	case "1", "p", "problems":
+	case "p", "problems":
 		return m.switchView(viewProblems)
-	case "2", "d", "down":
+	case "d", "down":
 		return m.switchView(viewDown)
-	case "3", "s", "services":
+	case "s", "services":
 		return m.switchView(viewServices)
-	case "4", "hosts":
+	case "hosts":
 		return m.switchView(viewHosts)
 	case "r", "refresh":
 		return m.refresh(false)
@@ -691,6 +710,15 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "mouse":
 		return m.toggleMouse()
+	case "numbers", "nu":
+		m.showNumbers = !m.showNumbers
+		return m, nil
+	case "browser", "b":
+		return m.openBrowser()
+	case "ssh":
+		return m.openSSH()
+	case "wiki":
+		return m.openWiki()
 	case "crit", "c":
 		return m.setStateFilter(checkmk.SvcCrit)
 	case "warn", "w":
@@ -702,10 +730,9 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "all":
 		return m.setStateFilter(-1)
 	case "h", "help":
-		m.helpOpen = true
-		return m, nil
+		return m.openHelp(), nil
 	}
-	// :N jumps to row N, like a vim line number.
+	// :N jumps to row N, like a vim line number (:numbers shows them).
 	if n, err := strconv.Atoi(line); err == nil && n > 0 {
 		m.cursor = n - 1
 		m.clampCursor(len(m.rows()))
@@ -780,22 +807,40 @@ func (m Model) openHostOf(host string) (Model, tea.Cmd) {
 	return m.openDetail(row{kind: rowHost, host: host})
 }
 
-func (m *Model) resizeDetail() {
-	w := m.width - 8
+// overlaySize is the inner size of the centred detail/help box.
+func (m Model) overlaySize() (w, h int) {
+	w = m.width - 8
 	if w > 100 {
 		w = 100
 	}
 	if w < 20 {
 		w = 20
 	}
-	h := m.height - 8
+	h = m.height - 8
 	if h < 5 {
 		h = 5
 	}
+	return w, h
+}
+
+func (m *Model) resizeDetail() {
+	w, h := m.overlaySize()
 	m.detailVP = viewport.New(w, h)
 	if m.detail != nil {
 		m.detailVP.SetContent(m.detailContent(w))
 	}
+}
+
+// openHelp shows the reference in a viewport sized like the detail box,
+// so the parts below the fold are reachable with the usual keys.
+func (m Model) openHelp() Model {
+	m.helpOpen = true
+	w, h := m.overlaySize()
+	y := m.helpVP.YOffset
+	m.helpVP = viewport.New(w, h)
+	m.helpVP.SetContent(helpContent())
+	m.helpVP.SetYOffset(y)
+	return m
 }
 
 // helpContent is the full key/command reference shown by :help —
@@ -809,13 +854,13 @@ func helpContent() string {
 	b.WriteString(styleTitle.Render("tuichk — keys & commands") + "\n\n")
 
 	b.WriteString(sec("Views") + "\n")
-	line("1 / 2 / 3 / 4", "Problems · Down · Services · Hosts")
-	line("tab / shift+tab", "next / previous view")
-	line(":problems :down …", "same, by name (:services :hosts, :p :d :s)")
+	line("tab / shift+tab", "next / previous view: Problems · Down · Services · Hosts")
+	line(":problems :down …", "a view by name (:services :hosts, :p :d :s)")
 	line("", styleDim.Render("Down lists every non-UP host, incl. acked/downtime"))
 
 	b.WriteString("\n" + sec("Movement") + "\n")
 	line("j / k, ↑ / ↓", "one row down / up")
+	line("12G, 5j, 3d …", "count prefix, vim-style: row 12; five down; three half pages")
 	line("d / u  (^d / ^u)", "half page down / up")
 	line("f / b  (^f/^b, PgDn/Up)", "full page down / up")
 	line("g / G, Home / End", "first / last row")
@@ -823,6 +868,7 @@ func helpContent() string {
 	line("zz / zt / zb", "scroll view so cursor line sits center / top / bottom")
 	line("", styleDim.Render("z-chords move the view, not the cursor — no-ops near the list top"))
 	line(":N", "jump to row N")
+	line(":numbers (:nu)", "toggle line numbers")
 
 	b.WriteString("\n" + sec("Search") + "\n")
 	line("/", "fuzzy filter over state, host, service, output")
@@ -845,10 +891,14 @@ func helpContent() string {
 	line("r, :r", "refresh hosts + problems")
 	line(":r!", "also refetch the full service list (heavy)")
 	line(":mouse", "toggle mouse: wheel scrolls, click selects, click again opens, click a tab")
+	line(":browser", "open the selected host/service in the CheckMK web GUI")
+	line(":wiki", "open the selected host in your wiki (wiki_url in the config)")
+	line(":ssh", "ssh to the selected host: new pane in zellij/tmux/wezterm/kitty/ghostty, else in place")
 	line("", styleDim.Render("mouse capture disables plain text selection — use shift-drag"))
 
 	b.WriteString("\n" + sec("Quit") + "\n")
 	line(":q", "quit (also :quit, :q!)")
+	line("", styleDim.Render("on the : line, tab completes a command and up/down recall earlier ones"))
 	line("ctrl+c ctrl+c", "quit (single press asks first)")
 
 	b.WriteString("\n" + styleDim.Render("  ? or :help opens this screen · any key closes"))
@@ -953,7 +1003,8 @@ func (m Model) View() string {
 	b.WriteString(m.viewFooter())
 
 	if m.helpOpen {
-		box := styleDetailBox.Render(helpContent())
+		hint := "esc close · j/k scroll · d/u f/b page · g/G top/bottom"
+		box := styleDetailBox.Render(m.helpVP.View() + "\n" + styleDim.Render(hint))
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	if m.detail != nil {
@@ -1074,7 +1125,23 @@ func (m Model) viewTable() string {
 	}
 
 	svcCol := m.view == viewProblems || m.view == viewServices
-	header := " " + pad("STATE", 6) + pad("F", 2) + pad("HOST", hostW+1)
+	// :numbers adds a right-aligned line number column, wide enough for
+	// the last row, so :N has something to aim at.
+	numW := 0
+	if m.showNumbers {
+		numW = len(strconv.Itoa(len(rows)))
+		if numW < 2 {
+			numW = 2
+		}
+	}
+	number := func(s string) string {
+		return strings.Repeat(" ", numW-len(s)) + s + " "
+	}
+	header := " " // the selection marker column
+	if m.showNumbers {
+		header += number("#")
+	}
+	header += pad("STATE", 6) + pad("F", 2) + pad("HOST", hostW+1)
 	if svcCol {
 		header += pad("SERVICE", descW+1)
 	}
@@ -1128,6 +1195,9 @@ func (m Model) viewTable() string {
 		}
 		body := r.stateStyledBG(bg) + base.Render(" ") +
 			paint(styleDim).Render(pad(flags, 2)) + base.Render(pad(r.host, hostW)+" ")
+		if m.showNumbers {
+			body = paint(styleDim).Render(number(strconv.Itoa(i+1))) + body
+		}
 		if svcCol {
 			body += base.Render(pad(r.desc, descW) + " ")
 		}
@@ -1158,7 +1228,7 @@ func (m Model) viewTable() string {
 
 func (m Model) viewFooter() string {
 	if m.cmdMode {
-		return " " + m.cmd.View()
+		return m.cmdLineView()
 	}
 	if m.quitArmed {
 		return stateStyles[1].Render(" really quit? ctrl+c again — any other key cancels (or use :q)")
@@ -1169,7 +1239,7 @@ func (m Model) viewFooter() string {
 	if m.err != nil {
 		return styleErr.Render(truncate.StringWithTail(" ✗ "+m.err.Error(), uint(m.width), "…"))
 	}
-	help := " / search · enter details · 1-4 views · r refresh · :q quit · ? help"
+	help := " / search · enter details · tab views · r refresh · :q quit · ? help"
 	if m.view == viewProblems {
 		help += " · :handled"
 	}
@@ -1177,6 +1247,9 @@ func (m Model) viewFooter() string {
 	pos := ""
 	if len(rows) > 0 {
 		pos = fmt.Sprintf("%d/%d ", m.cursor+1, len(rows))
+	}
+	if m.count > 0 {
+		pos = fmt.Sprintf("%d  ", m.count) + pos
 	}
 	gap := m.width - lipgloss.Width(help) - lipgloss.Width(pos)
 	if gap < 1 {

@@ -35,6 +35,19 @@ type Config struct {
 	// click tabs). Off by default because capturing the mouse takes
 	// over the terminal's own text selection. :mouse toggles at runtime.
 	Mouse bool `toml:"mouse"`
+	// BrowserCmd opens a URL for :browser; {url} is replaced by the
+	// shell-quoted link. Default: "open {url}" on macOS, "xdg-open {url}"
+	// elsewhere.
+	BrowserCmd string `toml:"browser_cmd"`
+	// SSHCmd is the command :ssh runs; {host} is replaced by the
+	// shell-quoted host name. Default "ssh {host}".
+	SSHCmd string `toml:"ssh_cmd"`
+	// SSHInline stops :ssh from opening a multiplexer/terminal pane; the
+	// command then always runs in place of the TUI until it exits.
+	SSHInline bool `toml:"ssh_inline"`
+	// WikiURL is the page :wiki opens for a host; {host} is replaced by
+	// the host name, {short} by its first DNS label, both URL-escaped.
+	WikiURL string `toml:"wiki_url"`
 	// HotMin/HotMax bound the "hot window": crit-level problems aged
 	// between them get extra visual weight. Go duration strings
 	// ("15m", "4h", "90m"); defaults 15m and 4h.
