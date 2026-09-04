@@ -1163,7 +1163,7 @@ func (m Model) viewFooter() string {
 	}
 	help := " / search · enter details · 1-4 views · r refresh · :q quit · ? help"
 	if m.view == viewProblems {
-		help += " · h handled"
+		help += " · :handled"
 	}
 	rows := m.rows()
 	pos := ""
