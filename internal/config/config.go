@@ -31,6 +31,10 @@ type Config struct {
 	RefreshSeconds *int `toml:"refresh_seconds"`
 	// InsecureTLS skips TLS certificate verification.
 	InsecureTLS bool `toml:"insecure_tls"`
+	// Mouse enables mouse capture at startup (wheel, click to select,
+	// click tabs). Off by default because capturing the mouse takes
+	// over the terminal's own text selection. :mouse toggles at runtime.
+	Mouse bool `toml:"mouse"`
 	// HotMin/HotMax bound the "hot window": crit-level problems aged
 	// between them get extra visual weight. Go duration strings
 	// ("15m", "4h", "90m"); defaults 15m and 4h.

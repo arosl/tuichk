@@ -20,6 +20,12 @@ password_cmd = "pass show checkmk/automation"
 # Skip TLS certificate verification (self-signed certs).
 # insecure_tls = false
 
+# Capture the mouse at startup: wheel scrolls, click selects a row, a
+# second click opens it, clicking a tab switches view. Off by default
+# because it takes over the terminal's own text selection (use shift-drag
+# or alt-drag to copy while it is on). :mouse toggles it at runtime.
+# mouse = false
+
 # The "hot window": crit-level problems (CRIT services, DOWN hosts) aged
 # between these bounds get an inverted red badge and sort above their peers —
 # old enough not to be a transient flap, young enough to still be actionable.

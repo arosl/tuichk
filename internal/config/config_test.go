@@ -72,3 +72,20 @@ password = "p"
 		}
 	}
 }
+
+func TestMouseOption(t *testing.T) {
+	cfg, err := Load(write(t, "url = \"https://x/site\"\nusername = \"u\"\npassword = \"p\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mouse {
+		t.Error("mouse should default to off")
+	}
+	cfg, err = Load(write(t, "url = \"https://x/site\"\nusername = \"u\"\npassword = \"p\"\nmouse = true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Mouse {
+		t.Error("mouse = true not honored")
+	}
+}

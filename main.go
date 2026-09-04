@@ -21,6 +21,7 @@ username = "automation"
 password_cmd = "pass show checkmk/automation"
 # refresh_seconds = 30
 # insecure_tls = false
+# mouse = false
 `
 
 func main() {
@@ -61,7 +62,12 @@ func main() {
 	client := checkmk.New(cfg.URL, cfg.Username, password, cfg.InsecureTLS)
 	model := ui.New(client, cfg.SiteName(), cfg.Refresh())
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if cfg.Mouse {
+		model = model.EnableMouse()
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	p := tea.NewProgram(model, opts...)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tuichk: %v\n", err)
 		os.Exit(1)

@@ -90,6 +90,7 @@ type Model struct {
 	stateFilter int  // -1 = all; else a checkmk.Svc* class, see matchesClass
 	pendingZ    bool // a "z" was pressed, awaiting z/t/b
 	quitArmed   bool // one quit key seen; a second confirms
+	mouse       bool // mouse capture on, see mouse.go
 
 	searching bool
 	search    textinput.Model
@@ -421,6 +422,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	}
 	return m, nil
 }
@@ -685,6 +689,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		m.showHandled = !m.showHandled
 		m.clampCursor(len(m.rows()))
 		return m, nil
+	case "mouse":
+		return m.toggleMouse()
 	case "crit", "c":
 		return m.setStateFilter(checkmk.SvcCrit)
 	case "warn", "w":
@@ -838,6 +844,8 @@ func helpContent() string {
 		"inverted badge = crit aged %s–%s: the actionable window", fmtDur(hotMinAge), fmtDur(hotMaxAge))))
 	line("r, :r", "refresh hosts + problems")
 	line(":r!", "also refetch the full service list (heavy)")
+	line(":mouse", "toggle mouse: wheel scrolls, click selects, click again opens, click a tab")
+	line("", styleDim.Render("mouse capture disables plain text selection — use shift-drag"))
 
 	b.WriteString("\n" + sec("Quit") + "\n")
 	line(":q", "quit (also :quit, :q!)")

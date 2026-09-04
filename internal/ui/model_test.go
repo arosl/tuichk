@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"tuichk/internal/checkmk"
 )
@@ -540,5 +541,107 @@ func TestPlainHDoesNotToggleHandled(t *testing.T) {
 	m = key(m, "h")
 	if m.showHandled || len(m.rows()) != before {
 		t.Errorf("h should be unbound; showHandled=%v rows %d->%d", m.showHandled, before, len(m.rows()))
+	}
+}
+
+func mouse(m Model, btn tea.MouseButton, x, y int) Model {
+	upd, _ := m.Update(tea.MouseMsg{Button: btn, Action: tea.MouseActionPress, X: x, Y: y})
+	return upd.(Model)
+}
+
+func TestMouseClickTabSwitchesView(t *testing.T) {
+	m := testModel(t)
+	if m.view != viewProblems {
+		t.Fatalf("expected Problems view initially, got %v", m.view)
+	}
+	// "4 Hosts" is the last label; find its column from the geometry helper.
+	x := 1
+	for i := range viewNames {
+		if view(i) == viewHosts {
+			break
+		}
+		x += lipgloss.Width(styleTabInactive.Render(fmt.Sprintf("%d %s", i+1, viewNames[i]))) + 1
+	}
+	// The active tab renders wider; recompute through the real helper.
+	if v, ok := m.tabAt(x + 2); !ok || v != viewHosts {
+		t.Fatalf("tabAt(%d) = %v,%v; want Hosts", x+2, v, ok)
+	}
+	m = mouse(m, tea.MouseButtonLeft, x+2, rowTabs)
+	if m.view != viewHosts {
+		t.Errorf("click on Hosts tab: view = %v", m.view)
+	}
+	if _, ok := m.tabAt(0); ok {
+		t.Error("column 0 is the margin, not a tab")
+	}
+}
+
+func TestMouseClickSelectsThenOpens(t *testing.T) {
+	m := testModel(t)
+	rows := m.rows()
+	if len(rows) < 2 {
+		t.Fatalf("need at least 2 rows, got %d", len(rows))
+	}
+	m = mouse(m, tea.MouseButtonLeft, 10, rowFirstData+1)
+	if m.cursor != 1 || m.detail != nil {
+		t.Fatalf("first click should select row 1 without opening; cursor=%d detail=%v", m.cursor, m.detail != nil)
+	}
+	m = mouse(m, tea.MouseButtonLeft, 10, rowFirstData+1)
+	if m.detail == nil || m.detail.host != rows[1].host || m.detail.desc != rows[1].desc {
+		t.Errorf("second click should open row 1's detail, got %+v", m.detail)
+	}
+	// A click on a detail does not close it; esc still does.
+	m = mouse(m, tea.MouseButtonLeft, 10, rowFirstData+1)
+	if m.detail == nil {
+		t.Error("click inside detail should not close it")
+	}
+	m = key(m, "esc")
+	if m.detail != nil {
+		t.Error("esc should close detail")
+	}
+	// Clicking below the last row is a no-op.
+	m = mouse(m, tea.MouseButtonLeft, 10, rowFirstData+len(rows)+3)
+	if m.cursor != 1 || m.detail != nil {
+		t.Errorf("click on empty space changed state: cursor=%d detail=%v", m.cursor, m.detail != nil)
+	}
+}
+
+func TestMouseWheelScrolls(t *testing.T) {
+	m := testModel(t)
+	// Shrink the table so the three problem rows overflow a 1-row window.
+	upd, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 6})
+	m = upd.(Model)
+	m = key(m, ":", "handled", "enter") // 3 rows visible-able, 1 row of table
+	if n := len(m.rows()); n != 3 {
+		t.Fatalf("want 3 rows, got %d", n)
+	}
+	m = mouse(m, tea.MouseButtonWheelDown, 0, rowFirstData)
+	if m.scroll != 2 || m.cursor != 2 {
+		t.Errorf("wheel down: scroll=%d cursor=%d, want 2/2 (clamped to the end)", m.scroll, m.cursor)
+	}
+	m = mouse(m, tea.MouseButtonWheelUp, 0, rowFirstData)
+	if m.scroll != 0 || m.cursor != 0 {
+		t.Errorf("wheel up: scroll=%d cursor=%d, want 0/0", m.scroll, m.cursor)
+	}
+}
+
+func TestMouseCommandToggles(t *testing.T) {
+	m := testModel(t)
+	m = key(m, ":", "mouse")
+	upd, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = upd.(Model)
+	if !m.mouse || cmd == nil {
+		t.Fatalf(":mouse should enable and emit a command; mouse=%v cmd=%v", m.mouse, cmd != nil)
+	}
+	if _, ok := cmd().(tea.MouseMsg); ok {
+		t.Error("toggle command must not be a mouse event")
+	}
+	m = key(m, ":", "mouse")
+	upd, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = upd.(Model)
+	if m.mouse || cmd == nil {
+		t.Errorf(":mouse again should disable and emit a command; mouse=%v", m.mouse)
+	}
+	if !New(nil, "x", 0).EnableMouse().mouse {
+		t.Error("EnableMouse should set the flag")
 	}
 }

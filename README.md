@@ -38,7 +38,8 @@ password_cmd = "pass show checkmk/automation"   # stdout = password
 `security find-generic-password`, 1Password CLI, …), so no secret lives in the
 config file. A plain `password = "..."` is also accepted.
 
-Other options: `refresh_seconds` (default 120, 0 = off), `insecure_tls`.
+Other options: `refresh_seconds` (default 120, 0 = off), `insecure_tls`,
+`mouse` (default off, see below).
 Config path override: `-config <path>` flag or `TUICHK_CONFIG` env var.
 
 The user needs no special role; read access to monitoring is enough. An
@@ -91,6 +92,7 @@ configurable with `hot_min` and `hot_max`.
 The `:` command line accepts `:q` (and `:quit`, `:q!`), the view names
 `:problems` `:down` `:services` `:hosts` (or `:1`–`:4`, `:p` `:d` `:s`),
 `:r`/`:refresh` (`:r!` also refetches the full service list), `:handled`,
+`:mouse`,
 `:N` to jump to row N, and `:help`.
 
 State filters `:crit`, `:warn`, `:unknown` (and `:ok`, `:all` to clear)
@@ -98,6 +100,16 @@ restrict the view to one state before fuzzy search runs, so `/nfs` under
 `:crit` cannot turn up a WARN row the way `crit nfs` alone might. DOWN hosts
 count as CRIT, UNREACHABLE as UNKNOWN. The active filter is shown next to the
 tabs.
+
+## Mouse
+
+Mouse support is off by default: capturing the mouse takes over the
+terminal's own text selection, and copying plugin output is common enough
+that plain drag-to-select stays the default. Turn it on with `mouse = true`
+in the config or `:mouse` at runtime (which also turns it off again). While
+on, the wheel scrolls the list and the detail view, a click selects a row, a
+second click on the selected row opens it, and clicking a tab switches view.
+Select text with shift-drag (alt-drag in some terminals) while it is on.
 
 ## Graphs
 
